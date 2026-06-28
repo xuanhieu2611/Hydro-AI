@@ -1,6 +1,8 @@
 import { View, Text, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { tapSelection } from '@/lib/haptics';
+
 import { formatVolume } from '@/lib/units';
 import type { UnitPreference } from '@/lib/data/types';
 
@@ -28,8 +30,12 @@ export function VolumeAdjuster({
   maxMl = 2000,
 }: VolumeAdjusterProps) {
   const clamp = (v: number) => Math.max(minMl, Math.min(maxMl, v));
-  const dec = () => onChange(clamp(valueMl - stepMl));
-  const inc = () => onChange(clamp(valueMl + stepMl));
+  const step = (next: number) => {
+    tapSelection();
+    onChange(clamp(next));
+  };
+  const dec = () => step(valueMl - stepMl);
+  const inc = () => step(valueMl + stepMl);
 
   return (
     <View className="flex-row items-center justify-between">

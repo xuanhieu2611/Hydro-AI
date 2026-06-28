@@ -8,6 +8,7 @@ import { BeveragePicker } from '@/components/BeveragePicker';
 import { VolumeAdjuster } from '@/components/VolumeAdjuster';
 import { useAddLog, useProfile } from '@/lib/query/hooks';
 import { DEFAULT_HYDRATION_COEFFICIENT } from '@/lib/beverage';
+import { analytics } from '@/lib/analytics';
 import type { BeverageType } from '@/lib/data/types';
 
 /**
@@ -32,7 +33,16 @@ export default function ManualLogModal() {
         thumbnail_url: null,
         ai_confidence_score: null,
       },
-      { onSuccess: () => router.back() },
+      {
+        onSuccess: () => {
+          analytics.track('log_added', {
+            method: 'manual',
+            beverage_type: beverage,
+            volume_ml: volumeMl,
+          });
+          router.back();
+        },
+      },
     );
   };
 

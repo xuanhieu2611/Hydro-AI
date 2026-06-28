@@ -18,6 +18,11 @@ export const seedProfile: Profile = {
   // Seeded false so the first-run onboarding flow is reachable. With the mock
   // store resetting on reload, you can replay onboarding any time (or Skip it).
   onboarding_completed: false,
+  // Reminders default off until the user opts in (onboarding or Profile).
+  reminders_enabled: false,
+  reminder_interval_hours: 2,
+  reminder_window_start_hour: 8,
+  reminder_window_end_hour: 20,
   created_at: new Date('2026-06-01T08:00:00Z').toISOString(),
 };
 

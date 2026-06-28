@@ -11,6 +11,7 @@ import type {
   NewLogEntry,
   Profile,
 } from '../data/types';
+import { bumpInactivityNudge } from '../notifications';
 import { todayKey } from '../date';
 import { MOCK_USER_ID } from '../data/mock/seed';
 import { queryKeys } from './client';
@@ -95,6 +96,11 @@ export function useAddLog() {
     onError: (_err, _entry, ctx) => {
       if (ctx?.previous) qc.setQueryData(key, ctx.previous);
     },
+    onSuccess: () => {
+      // Logging activity pushes the "haven't logged in a while" nudge back out.
+      const profile = qc.getQueryData<Profile>(queryKeys.profile);
+      if (profile) bumpInactivityNudge(profile);
+    },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: key });
       qc.invalidateQueries({ queryKey: queryKeys.dailySummary(date) });
@@ -150,6 +156,32 @@ export function useDeleteLog(date: string = todayKey()) {
       qc.invalidateQueries({ queryKey: key });
       qc.invalidateQueries({ queryKey: queryKeys.dailySummary(date) });
       qc.invalidateQueries({ queryKey: ['history'] });
+    },
+  });
+}
+
+/** Wipe all logged history (keeps the profile). GDPR/CCPA, Phase 4. */
+export function useClearAllData() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => repository.clearAllLogs(),
+    onSuccess: () => {
+      // Everything log-derived is now empty — refetch across the app.
+      qc.invalidateQueries({ queryKey: ['logEntries'] });
+      qc.invalidateQueries({ queryKey: ['dailySummary'] });
+      qc.invalidateQueries({ queryKey: ['history'] });
+    },
+  });
+}
+
+/** Delete the account: wipe logs + reset the profile to first-run state. */
+export function useDeleteAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => repository.deleteAccount(),
+    onSuccess: () => {
+      // Profile reset flips the onboarding gate; clear all caches.
+      qc.invalidateQueries();
     },
   });
 }

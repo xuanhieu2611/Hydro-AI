@@ -2,6 +2,8 @@ import type { DataRepository } from './repository';
 import type { Analyzer } from './analyzer';
 import { MockRepository } from './mock/MockRepository';
 import { MockAnalyzer } from './mock/MockAnalyzer';
+import { SupabaseRepository } from './supabase/SupabaseRepository';
+import { EdgeFunctionAnalyzer } from './supabase/EdgeFunctionAnalyzer';
 
 /**
  * Provider selector. `EXPO_PUBLIC_DATA_SOURCE` picks the implementation
@@ -17,10 +19,7 @@ const source = (process.env.EXPO_PUBLIC_DATA_SOURCE ?? 'mock') as DataSource;
 function createRepository(): DataRepository {
   switch (source) {
     case 'supabase':
-      // TODO(Phase B): return new SupabaseRepository();
-      throw new Error(
-        'SupabaseRepository not implemented yet. Set EXPO_PUBLIC_DATA_SOURCE=mock.',
-      );
+      return new SupabaseRepository();
     case 'mock':
     default:
       return new MockRepository();
@@ -30,10 +29,7 @@ function createRepository(): DataRepository {
 function createAnalyzer(): Analyzer {
   switch (source) {
     case 'supabase':
-      // TODO(Phase B): return new EdgeFunctionAnalyzer();
-      throw new Error(
-        'EdgeFunctionAnalyzer not implemented yet. Set EXPO_PUBLIC_DATA_SOURCE=mock.',
-      );
+      return new EdgeFunctionAnalyzer();
     case 'mock':
     default:
       return new MockAnalyzer();

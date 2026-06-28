@@ -37,6 +37,13 @@ export interface Profile {
   unit_preference: UnitPreference;
   /** First-run flag — false until onboarding is finished (gates the app). */
   onboarding_completed: boolean;
+  /** Reminder schedule (Phase 4). Drives the local notifications in lib/notifications. */
+  reminders_enabled: boolean;
+  /** Hours between reminders within the active window, e.g. 2. */
+  reminder_interval_hours: number;
+  /** Active window, local 24h clock — no reminders fire outside [start, end]. */
+  reminder_window_start_hour: number; // e.g. 8  → 8am
+  reminder_window_end_hour: number; // e.g. 20 → 8pm
   created_at: string; // ISO timestamp
 }
 

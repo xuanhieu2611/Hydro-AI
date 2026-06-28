@@ -27,4 +27,9 @@ export interface DataRepository {
   getDailySummary(date: string): Promise<DailySummary>;
   /** Most-recent-first summaries for the past `rangeDays` days (incl. today). */
   getHistory(rangeDays: number): Promise<DailySummary[]>;
+
+  /** GDPR/CCPA (Phase 4): wipe all log history, keep the profile. */
+  clearAllLogs(): Promise<void>;
+  /** Delete the account — wipe logs and reset the profile to first-run state. */
+  deleteAccount(): Promise<void>;
 }

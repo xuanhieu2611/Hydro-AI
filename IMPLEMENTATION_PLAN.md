@@ -113,14 +113,14 @@ interface Analyzer {            // the AI boundary
 
 **Goal:** Retention mechanics + production readiness. (US-13, US-14, US-15)
 
-- [ ] Local notifications via `expo-notifications`: schedulable reminders (e.g., every 2h, 8am–8pm), user-customizable frequency/window.
-- [ ] "Haven't logged in a while" nudge + goal-met celebration.
-- [ ] Empty/loading/error states everywhere; offline-tolerant logging (queue + retry).
-- [ ] Privacy copy: "photos are processed and discarded."
-- [ ] Account/data deletion (delete entry, delete account) — GDPR/CCPA basics.
-- [ ] Analytics for the success metrics (retention, logs/day, onboarding completion).
+- [x] Local notifications via `expo-notifications`: schedulable reminders (e.g., every 2h, 8am–8pm), user-customizable frequency/window. *(`lib/notifications.ts` — DAILY triggers per window slot; settings persist on the Profile (`reminders_*`) and `syncReminders` reconciles the OS schedule from the root layout on every change. Reminder controls in Profile; onboarding opt-in persists `reminders_enabled`. `expo-notifications` config plugin added to `app.json`.)*
+- [x] "Haven't logged in a while" nudge + goal-met celebration. *(Inactivity nudge re-armed after each log via `useAddLog` (`bumpInactivityNudge`). Goal-met fires once on the false→true transition on Home — in-app banner + `celebrateGoalMet` notification + `goal_met` analytics.)*
+- [x] Empty/loading/error states everywhere; offline-tolerant logging (queue + retry). *(`components/StateViews.tsx` (Loading/Empty/Error+retry); Home feed error state; History screen implemented as a 7-day bar view with all three states. Mutations keep TanStack optimistic rollback + `retry:1`. **Note:** a true offline queue is deferred to Phase B — meaningless against the in-memory mock; the retry/rollback affordances are in place to build on.)*
+- [x] Privacy copy: "photos are processed and discarded." *(Camera capture caption + Profile → Privacy section; already in the iOS usage strings.)*
+- [x] Account/data deletion (delete entry, delete account) — GDPR/CCPA basics. *(Delete entry already shipped (LogFeed). Added `clearAllLogs` + `deleteAccount` to the repository/interface + hooks; Profile → Data & account with confirm dialogs. Delete account resets the profile → onboarding gate.)*
+- [x] Analytics for the success metrics (retention, logs/day, onboarding completion). *(`lib/analytics.ts` — typed `Analytics` boundary + `ConsoleAnalytics` stub (real provider deferred to Phase B). Events: `app_opened`, `onboarding_completed`/`skipped`, `log_added` (method+beverage+volume), `goal_met`, `reminders_configured`, `data_cleared`, `account_deleted`.)*
 
-**Exit criteria:** Feature-complete Phase-1 UI/UX, fully usable on dummy data. **This is where the UI is finalized — the gate before touching the backend.**
+**Exit criteria:** Feature-complete Phase-1 UI/UX, fully usable on dummy data. **This is where the UI is finalized — the gate before touching the backend.** ✅
 
 ---
 
@@ -129,9 +129,9 @@ interface Analyzer {            // the AI boundary
 **Goal:** Implement the real backend behind the *unchanged* `DataRepository` / `Analyzer` interfaces and flip the flag. No screen logic changes — if a screen needs editing here, the abstraction leaked and should be fixed.
 
 ### Supabase setup
-- [ ] Create Supabase project; put URL + anon key in env (EAS secrets — never commit). Add `@supabase/supabase-js`.
-- [ ] Supabase client singleton with AsyncStorage session persistence.
-- [ ] Anonymous auth on first launch; create a `profiles` row.
+- [x] Create Supabase project; put URL + anon key in env (EAS secrets — never commit). Add `@supabase/supabase-js`. *(Project "HydroAI" `cwxgvpdbaihlulkiuucd`; URL + publishable key in `.env` (now gitignored); deps incl. `@react-native-async-storage/async-storage`, `react-native-url-polyfill`, `expo-file-system`, `base64-arraybuffer`.)*
+- [x] Supabase client singleton with AsyncStorage session persistence. *(`lib/supabase/client.ts` — `detectSessionInUrl:false`; `ensureSession`/`currentUserId`/`resetSession` helpers.)*
+- [x] Anonymous auth on first launch; create a `profiles` row. *(Lazy `signInAnonymously` via `ensureSession`; `profiles` row auto-created by the `handle_new_user` trigger on `auth.users` insert.)* **Prereq: enable Anonymous sign-ins in Supabase → Auth → Sign In / Providers.**
 
 ### Schema + security (migrations)
 ```sql
@@ -140,6 +140,11 @@ profiles(
   display_name text,
   daily_goal_ml int default 2000,
   unit_preference text default 'ml',     -- 'ml' | 'oz'
+  onboarding_completed boolean default false,
+  reminders_enabled boolean default false,            -- Phase 4 reminder schedule
+  reminder_interval_hours int default 2,
+  reminder_window_start_hour int default 8,           -- local 24h clock
+  reminder_window_end_hour int default 20,
   created_at timestamptz default now()
 )
 log_entries(
@@ -155,26 +160,28 @@ log_entries(
   ai_confidence_score numeric
 )
 ```
-- [ ] **RLS on every table** — users only access their own rows.
-- [ ] `daily_summary` as a SQL **view** (sum per day, goal_met).
-- [ ] Private Storage bucket `thumbnails` (RLS by user folder).
+- [x] **RLS on every table** — users only access their own rows. *(select/insert/update/delete policies on `profiles` + `log_entries`, all `auth.uid() = id/user_id`. Migrations applied; security advisors clean — `handle_new_user` EXECUTE revoked from public.)*
+- [x] `daily_summary` as a SQL **view** (sum per day, goal_met). *(`security_invoker` view. NB: the repo rolls daily summaries up client-side in device-local time to match the mock; the view is for server-side/analytics use to avoid UTC-vs-local date drift.)*
+- [x] Private Storage bucket `thumbnails` (RLS by user folder). *(Objects under `<uid>/…`; per-user folder policies. Reads return short-lived signed URLs.)*
 
 ### Real AI — Edge Function `analyze-image`
-- [ ] Accepts a downscaled image, calls Claude Vision with a strict **JSON-only** prompt:
+- [x] Accepts a downscaled image, calls Claude Vision with a strict **JSON-only** prompt: *(`supabase/functions/analyze-image/index.ts`, deployed; model `claude-sonnet-4-6` (override via `ANTHROPIC_MODEL`), structured `output_config.format` JSON schema, `verify_jwt` on.)* **Prereq: set the `ANTHROPIC_API_KEY` Edge Function secret.**
   ```json
   { "is_drink": true, "container_type": "ceramic_mug", "beverage_type": "coffee",
     "estimated_volume_ml": 240, "volume_range_ml": [200, 280],
     "fill_ratio": 0.8, "confidence": 0.86, "hydration_coefficient": 0.8 }
   ```
-- [ ] Validate/parse JSON; confidence < 0.70 → flag low-confidence + return range. `is_drink:false` → "That doesn't look like a drink."
-- [ ] **Image processed ephemerally** — never persist full-res server-side (PRD privacy). App uploads only a small thumbnail.
+- [x] Validate/parse JSON; confidence < 0.70 → flag low-confidence + return range. `is_drink:false` → "That doesn't look like a drink." *(Schema + prompt own this; existing result-card UI already branches on confidence/`is_drink`.)*
+- [x] **Image processed ephemerally** — never persist full-res server-side (PRD privacy). App uploads only a small thumbnail. *(Function returns metadata only; nothing written server-side. App uploads the downscaled thumbnail to Storage.)*
 
 ### The swap
-- [ ] Implement `SupabaseRepository` (same interface as `MockRepository`) and `EdgeFunctionAnalyzer` (same interface as `MockAnalyzer`).
-- [ ] Real thumbnail upload to Storage on log confirm.
-- [ ] Flip `EXPO_PUBLIC_DATA_SOURCE=supabase`. Smoke-test every screen against live data.
+- [x] Implement `SupabaseRepository` (same interface as `MockRepository`) and `EdgeFunctionAnalyzer` (same interface as `MockAnalyzer`). *(`lib/data/supabase/*`; wired in `lib/data/index.ts`. No screen/hook changes — the abstraction held.)*
+- [x] Real thumbnail upload to Storage on log confirm. *(`SupabaseRepository.addLogEntry` uploads local URIs → stores the object path → signs on read.)*
+- [x] Flip `EXPO_PUBLIC_DATA_SOURCE=supabase`. Smoke-test every screen against live data. *(Flag flipped in `.env`. Smoke test pending the two prereqs below.)*
 
 **Exit criteria:** App runs end-to-end on real Supabase + Claude Vision with no UI changes from Phase 4. Keep `mock` working for fast UI iteration.
+
+> **Two manual prerequisites before the app boots on `supabase`:** (1) enable **Anonymous sign-ins** (Auth → Sign In / Providers) — without it first-launch sign-in fails and the app holds on the splash; (2) set the **`ANTHROPIC_API_KEY`** Edge Function secret (`supabase secrets set ANTHROPIC_API_KEY=...` or the dashboard) — without it photo analysis returns a 500. The DB schema, RLS, storage, and the deployed function are already in place.
 
 ---
 

@@ -95,6 +95,25 @@ export class MockRepository implements DataRepository {
     );
   }
 
+  async clearAllLogs(): Promise<void> {
+    await delay();
+    this.entries = [];
+  }
+
+  async deleteAccount(): Promise<void> {
+    await delay();
+    // Wipe history and reset to a fresh, un-onboarded profile (keeps the id so
+    // the rest of the session stays coherent; the real impl signs the user out).
+    this.entries = [];
+    this.profile = {
+      ...seedProfile,
+      id: this.profile.id,
+      display_name: null,
+      onboarding_completed: false,
+      reminders_enabled: false,
+    };
+  }
+
   /** Synchronous rollup used by both summary methods. */
   private summaryFor(date: string): DailySummary {
     const dayEntries = this.entries.filter((e) => isOnDate(e.logged_at, date));

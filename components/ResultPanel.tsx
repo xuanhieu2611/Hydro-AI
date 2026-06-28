@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
-import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { VolumeAdjuster } from './VolumeAdjuster';
+import { tapLight } from '@/lib/haptics';
+import { gradients } from '@/lib/theme';
 import {
   beverageEmoji,
   beverageLabel,
@@ -21,7 +23,7 @@ import type {
 /** < 0.70 forces explicit confirmation rather than one-tap accept (CLAUDE.md). */
 const LOW_CONFIDENCE = 0.7;
 
-interface ResultCardProps {
+interface ResultPanelProps {
   result: AnalysisResult;
   /** Local image URI used as the thumbnail until Storage upload (Phase B). */
   imageUri: string | null;
@@ -33,24 +35,26 @@ interface ResultCardProps {
 }
 
 /**
- * Slide-up card shown after analysis. For a confident drink the primary action
- * is a one-tap "Log It"; a low-confidence result surfaces the estimate range and
+ * The "developed" content that emerges below the polaroid print once analysis
+ * finishes (see `PolaroidResult`). The print itself owns the photo; this panel
+ * is just the read-out + actions. For a confident drink the primary action is a
+ * one-tap "Log It"; a low-confidence result surfaces the estimate range and
  * downgrades the button to "Confirm & Log". A non-drink offers only a retake.
  */
-export function ResultCard({
+export function ResultPanel({
   result,
   imageUri,
   unit,
   logging,
   onLog,
   onRetake,
-}: ResultCardProps) {
+}: ResultPanelProps) {
   if (!result.is_drink) {
-    return <NonDrinkCard reasoning={result.reasoning} onRetake={onRetake} />;
+    return <NonDrinkPanel reasoning={result.reasoning} onRetake={onRetake} />;
   }
 
   return (
-    <DrinkCard
+    <DrinkPanel
       result={result}
       imageUri={imageUri}
       unit={unit}
@@ -61,14 +65,14 @@ export function ResultCard({
   );
 }
 
-function DrinkCard({
+function DrinkPanel({
   result,
   imageUri,
   unit,
   logging,
   onLog,
   onRetake,
-}: ResultCardProps) {
+}: ResultPanelProps) {
   const estimate = result.estimated_volume_ml ?? 250;
   const coefficient = result.hydration_coefficient ?? 1.0;
   const lowConfidence = result.confidence < LOW_CONFIDENCE;
@@ -81,6 +85,7 @@ function DrinkCard({
   const hMeta = HYDRATION_CLASS_META[hClass];
 
   const handleLog = () => {
+    tapLight();
     onLog({
       beverage_type: result.beverage_type ?? 'other',
       estimated_volume_ml: estimate,
@@ -92,21 +97,19 @@ function DrinkCard({
   };
 
   return (
-    <CardShell>
+    <View>
+      {/* What the AI read — the "it recognised my drink" line. */}
       <View className="flex-row items-center gap-3">
-        <Text className="text-4xl">{beverageEmoji(result.beverage_type)}</Text>
+        <Text className="text-3xl">{beverageEmoji(result.beverage_type)}</Text>
         <View className="flex-1">
-          <Text className="text-2xl font-bold text-slate-900">
+          <Text className="text-xl font-bold text-slate-900">
             {beverageLabel(result.beverage_type)}
           </Text>
           <Text className="text-sm text-slate-500">
             in a {containerLabel(result.container_type)}
           </Text>
         </View>
-        <View
-          className="rounded-full px-3 py-1"
-          style={{ backgroundColor: hMeta.bg }}
-        >
+        <View className="rounded-full px-3 py-1" style={{ backgroundColor: hMeta.bg }}>
           <Text className="text-xs font-semibold" style={{ color: hMeta.tint }}>
             {hMeta.label}
           </Text>
@@ -131,25 +134,35 @@ function DrinkCard({
         </View>
       )}
 
-      <Pressable
-        onPress={handleLog}
-        disabled={logging}
-        className="h-14 flex-row items-center justify-center gap-2 rounded-2xl bg-hydro-500 active:bg-hydro-600"
-      >
-        {logging ? (
-          <ActivityIndicator color="white" />
-        ) : (
-          <>
-            <Ionicons
-              name={lowConfidence ? 'checkmark-circle' : 'water'}
-              size={20}
-              color="white"
-            />
-            <Text className="text-lg font-semibold text-white">
-              {lowConfidence ? 'Confirm & Log' : 'Log It'}
-            </Text>
-          </>
-        )}
+      <Pressable onPress={handleLog} disabled={logging} className="active:opacity-90">
+        <LinearGradient
+          colors={gradients.hero}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{
+            borderRadius: 16,
+            height: 56,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+          }}
+        >
+          {logging ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <>
+              <Ionicons
+                name={lowConfidence ? 'checkmark-circle' : 'water'}
+                size={20}
+                color="white"
+              />
+              <Text className="text-lg font-semibold text-white">
+                {lowConfidence ? 'Confirm & Log' : 'Log It'}
+              </Text>
+            </>
+          )}
+        </LinearGradient>
       </Pressable>
 
       <Pressable onPress={onRetake} disabled={logging} className="mt-2 py-3">
@@ -157,11 +170,11 @@ function DrinkCard({
           Retake
         </Text>
       </Pressable>
-    </CardShell>
+    </View>
   );
 }
 
-function NonDrinkCard({
+function NonDrinkPanel({
   reasoning,
   onRetake,
 }: {
@@ -169,12 +182,9 @@ function NonDrinkCard({
   onRetake: () => void;
 }) {
   return (
-    <CardShell>
+    <View>
       <View className="items-center py-2">
-        <View className="h-16 w-16 items-center justify-center rounded-full bg-slate-100">
-          <Ionicons name="help-outline" size={32} color="#94A3B8" />
-        </View>
-        <Text className="mt-4 text-xl font-bold text-slate-900">
+        <Text className="text-xl font-bold text-slate-900">
           That doesn&apos;t look like a drink
         </Text>
         <Text className="mt-1 text-center text-sm text-slate-500">
@@ -189,20 +199,6 @@ function NonDrinkCard({
         <Ionicons name="camera" size={20} color="white" />
         <Text className="text-lg font-semibold text-white">Retake</Text>
       </Pressable>
-    </CardShell>
-  );
-}
-
-/** Shared slide-up sheet chrome (rounded top, grab handle, entrance animation). */
-function CardShell({ children }: { children: React.ReactNode }) {
-  return (
-    <Animated.View
-      entering={SlideInDown.springify().damping(20).mass(0.6)}
-      className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white px-6 pb-10 pt-3"
-      style={{ shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 20, shadowOffset: { width: 0, height: -4 } }}
-    >
-      <View className="mb-4 h-1.5 w-12 self-center rounded-full bg-slate-200" />
-      <Animated.View entering={FadeIn.delay(120)}>{children}</Animated.View>
-    </Animated.View>
+    </View>
   );
 }

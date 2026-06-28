@@ -60,11 +60,12 @@ supabase/
 - Supabase local / functions: `supabase start`, `supabase functions serve analyze-image`
 - Lint/test: _not configured yet — add ESLint + a test runner when needed, then update this._
 
-> Data source flag: `EXPO_PUBLIC_DATA_SOURCE` in `.env` (default `mock`). The `supabase` branch throws until Phase B.
+> Data source flag: `EXPO_PUBLIC_DATA_SOURCE` in `.env` (`mock` | `supabase`). Phase B is wired: `supabase` uses `SupabaseRepository` + `EdgeFunctionAnalyzer` against project `cwxgvpdbaihlulkiuucd`. It needs two one-time prereqs — Anonymous sign-ins enabled (Auth settings) + the `ANTHROPIC_API_KEY` Edge Function secret. `mock` stays fully working for fast UI iteration.
 > Reanimated 4 note: its Babel plugin is `react-native-worklets/plugin` (in `babel.config.js`), not `react-native-reanimated/plugin`.
+> Fake camera flag: `EXPO_PUBLIC_FAKE_CAMERA=1` swaps the `CameraView` for bundled sample photos (`assets/fake-camera/`) fed through the normal downscale→analyze→result-card path — the simulator has no camera (black preview, unusable `takePictureAsync`). Pair with `EXPO_PUBLIC_DATA_SOURCE=mock` for a fully clickable, zero-cost capture flow. Samples are ordered to match `MockAnalyzer`'s script. Off by default / on device. See `lib/dev/fakeCamera.ts`.
 
 ## Data model (see IMPLEMENTATION_PLAN.md §Phase 1 for full SQL)
-`profiles` (goal, units) · `log_entries` (volume, beverage_type, hydration_coefficient, thumbnail_url, ai_confidence_score) · `daily-summary` as a SQL view.
+`profiles` (goal, units, onboarding_completed, reminder schedule: enabled/interval/window) · `log_entries` (volume, beverage_type, hydration_coefficient, thumbnail_url, ai_confidence_score) · `daily-summary` as a SQL view.
 
 ## When in doubt
 - Scope/priority questions → check the PRD's user-story priorities (P0/P1/P2) and the phase plan; build P0 first.

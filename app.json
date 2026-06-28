@@ -8,15 +8,16 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "bundleIdentifier": "com.hydroai.app",
+      "bundleIdentifier": "com.xuanhieu2611.hydroai",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Hydro AI uses the camera to photograph your drink and estimate how much you've had. Photos are processed and discarded — only the volume is saved.",
-        "NSPhotoLibraryUsageDescription": "Hydro AI lets you add a drink from your camera roll if you forgot to log it in the moment."
+        "NSPhotoLibraryUsageDescription": "Hydro AI lets you add a drink from your camera roll if you forgot to log it in the moment.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.hydroai.app",
+      "package": "com.xuanhieu2611.hydroai",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -25,8 +26,12 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -48,10 +53,25 @@
           "photosPermission": "Hydro AI lets you add a drink from your camera roll if you forgot to log it in the moment."
         }
       ],
-      "expo-font"
+      "expo-notifications",
+      "expo-font",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4f8ef912-a5df-4dd8-b852-57c8372b4984"
+      }
+    },
+    "owner": "xuanhieu2611",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4f8ef912-a5df-4dd8-b852-57c8372b4984"
     }
   }
 }

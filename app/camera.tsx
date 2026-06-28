@@ -1,13 +1,20 @@
 import { useRef, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
-import { ResultCard } from '@/components/ResultCard';
+import { PolaroidResult } from '@/components/PolaroidResult';
 import { useAnalyzeImage, useAddLog, useProfile } from '@/lib/query/hooks';
+import { analytics } from '@/lib/analytics';
+import { tapLight } from '@/lib/haptics';
+import {
+  FAKE_CAMERA_ENABLED,
+  FAKE_CAMERA_SAMPLES,
+  fakeCaptureUri,
+} from '@/lib/dev/fakeCamera';
 import type { AnalysisResult, NewLogEntry } from '@/lib/data/types';
 
 /** Downscale captured photos before analysis — keeps the eventual upload cheap
@@ -32,14 +39,23 @@ export default function CameraModal() {
   const addLog = useAddLog();
 
   const [capturing, setCapturing] = useState(false);
+  // The frozen full-res shot shown in the polaroid (set instantly on capture).
+  const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  // The downscaled thumbnail kept for logging / Storage upload (Phase B).
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  // Which entry point produced the current result — for log_added analytics.
+  const [source, setSource] = useState<'camera' | 'gallery'>('camera');
+  // Fake-camera dev mode: which scripted sample the viewfinder is showing.
+  // Mirrors the MockAnalyzer cursor so the still matches the returned result.
+  const [fakeIndex, setFakeIndex] = useState(0);
 
   const unit = profile.data?.unit_preference ?? 'ml';
   const busy = capturing || analyze.isPending;
 
-  /** Downscale a source image, then run it through the (mock) analyzer. */
+  /** Freeze the frame, downscale, then run it through the (mock) analyzer. */
   const analyzeUri = async (uri: string) => {
+    setCapturedUri(uri); // freeze instantly — the polaroid takes over from here
     const thumb = await downscale(uri);
     setImageUri(thumb);
     setCapturing(false);
@@ -48,9 +64,23 @@ export default function CameraModal() {
   };
 
   const handleCapture = async () => {
-    if (!cameraRef.current || busy) return;
+    if (busy) return;
+    tapLight();
+    setSource('camera');
     setCapturing(true);
     try {
+      // Fake mode: feed the bundled sample (no real camera on the simulator);
+      // advance the cursor so the next viewfinder/result pair stays in sync.
+      if (FAKE_CAMERA_ENABLED) {
+        const uri = await fakeCaptureUri(fakeIndex);
+        setFakeIndex((i) => i + 1);
+        await analyzeUri(uri);
+        return;
+      }
+      if (!cameraRef.current) {
+        setCapturing(false);
+        return;
+      }
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
       if (!photo) {
         setCapturing(false);
@@ -70,6 +100,7 @@ export default function CameraModal() {
       quality: 0.7,
     });
     if (picked.canceled || !picked.assets[0]) return;
+    setSource('gallery');
     setCapturing(true);
     try {
       await analyzeUri(picked.assets[0].uri);
@@ -80,19 +111,30 @@ export default function CameraModal() {
 
   const handleRetake = () => {
     setResult(null);
+    setCapturedUri(null);
     setImageUri(null);
     analyze.reset();
   };
 
   const handleLog = (entry: NewLogEntry) => {
-    addLog.mutate(entry, { onSuccess: () => router.back() });
+    addLog.mutate(entry, {
+      onSuccess: () => {
+        analytics.track('log_added', {
+          method: source,
+          beverage_type: entry.beverage_type,
+          volume_ml: entry.user_adjusted_volume_ml ?? entry.estimated_volume_ml,
+        });
+        router.back();
+      },
+    });
   };
 
-  if (!permission) {
+  // Fake mode bypasses the real camera, so skip its permission gate entirely.
+  if (!FAKE_CAMERA_ENABLED && !permission) {
     return <Centered><ActivityIndicator color="white" /></Centered>;
   }
 
-  if (!permission.granted) {
+  if (!FAKE_CAMERA_ENABLED && !permission?.granted) {
     return (
       <Centered>
         <Ionicons name="camera-outline" size={56} color="#94A3B8" />
@@ -110,24 +152,32 @@ export default function CameraModal() {
     );
   }
 
+  const fakeSample = FAKE_CAMERA_SAMPLES[fakeIndex % FAKE_CAMERA_SAMPLES.length];
+
   return (
     <View className="flex-1 bg-black">
-      <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" />
+      {FAKE_CAMERA_ENABLED ? (
+        // Simulator-friendly stand-in for the (black) camera preview.
+        <Image source={fakeSample.source} style={{ flex: 1 }} resizeMode="cover" />
+      ) : (
+        <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" />
+      )}
 
       <CloseButton onPress={() => router.back()} />
 
-      {/* Capture/analyze overlay */}
-      {busy && (
-        <View className="absolute inset-0 items-center justify-center bg-black/40">
-          <ActivityIndicator size="large" color="white" />
-          <Text className="mt-3 text-base font-medium text-white">
-            {capturing ? 'Capturing…' : 'Estimating your drink…'}
-          </Text>
+      {FAKE_CAMERA_ENABLED && !capturedUri && (
+        <View className="absolute inset-x-0 top-16 flex-row items-center justify-center">
+          <View className="flex-row items-center gap-1.5 rounded-full bg-amber-500/90 px-3 py-1">
+            <Ionicons name="construct" size={12} color="white" />
+            <Text className="text-xs font-semibold text-white">
+              Fake camera · {fakeSample.label}
+            </Text>
+          </View>
         </View>
       )}
 
-      {/* Shutter + gallery — hidden once we have a result so the card has room. */}
-      {!result && !busy && (
+      {/* Shutter + gallery — hidden once a shot is captured so the print has room. */}
+      {!capturedUri && (
         <View className="absolute inset-x-0 bottom-12 flex-row items-center justify-center">
           <Pressable
             onPress={handleCapture}
@@ -145,10 +195,19 @@ export default function CameraModal() {
         </View>
       )}
 
-      {result && (
-        <ResultCard
+      {/* Privacy reassurance (PRD privacy promise). */}
+      {!capturedUri && (
+        <View className="absolute inset-x-0 bottom-2 flex-row items-center justify-center gap-1.5">
+          <Ionicons name="lock-closed" size={11} color="rgba(255,255,255,0.6)" />
+          <Text className="text-xs text-white/60">Photos are processed and discarded</Text>
+        </View>
+      )}
+
+      {/* Post-capture: frozen photo develops, then docks the result panel. */}
+      {capturedUri && (
+        <PolaroidResult
+          imageUri={capturedUri}
           result={result}
-          imageUri={imageUri}
           unit={unit}
           logging={addLog.isPending}
           onLog={handleLog}

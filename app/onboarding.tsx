@@ -9,12 +9,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
 
 import { VolumeAdjuster } from '@/components/VolumeAdjuster';
+import { LiquidGauge } from '@/components/LiquidGauge';
+import { gradients } from '@/lib/theme';
 import { useUpdateProfile } from '@/lib/query/hooks';
+import { analytics } from '@/lib/analytics';
 import {
   ACTIVITY_META,
   lbToKg,
@@ -49,16 +53,33 @@ export default function Onboarding() {
 
   /** Persist the collected settings, flip the gate, then leave onboarding. */
   const finish = async (thenCamera: boolean) => {
+    // Skip = leaving before the final step (settings stay at their defaults).
+    const skipped = step < LAST_STEP;
     await updateProfile.mutateAsync({
       daily_goal_ml: goalMl,
       unit_preference: unit,
+      reminders_enabled: notify,
       onboarding_completed: true,
     });
+    if (skipped) {
+      analytics.track('onboarding_skipped', {});
+    } else {
+      analytics.track('onboarding_completed', {
+        goal_ml: goalMl,
+        unit,
+        reminders_enabled: notify,
+      });
+    }
     router.replace(thenCamera ? '/camera' : '/(tabs)');
   };
 
   return (
     <SafeAreaView className="flex-1 bg-white">
+      <LinearGradient
+        colors={gradients.sky}
+        locations={[0, 0.45, 1]}
+        style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
+      />
       {/* Header: progress dots + Skip */}
       <View className="flex-row items-center justify-between px-6 pt-2">
         <View className="flex-row gap-1.5">
@@ -130,8 +151,10 @@ function Welcome() {
   return (
     <StepBody>
       <View className="flex-1 items-center justify-center">
-        <Text className="text-7xl">💧</Text>
-        <Text className="mt-6 text-3xl font-bold text-slate-900">Hydro AI</Text>
+        <LiquidGauge progress={0.68} size={180}>
+          <Text className="text-5xl">💧</Text>
+        </LiquidGauge>
+        <Text className="mt-8 text-3xl font-bold text-hydro-950">Hydro AI</Text>
         <Text className="mt-3 text-center text-base text-slate-500">
           Snap a photo of any drink and we&apos;ll estimate the volume and log it —
           no typing, no guesswork.

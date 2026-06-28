@@ -1,12 +1,20 @@
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-import { ProgressRing } from '@/components/ProgressRing';
+import { LiquidGauge } from '@/components/LiquidGauge';
+import { CountUp } from '@/components/CountUp';
 import { LogFeed } from '@/components/LogFeed';
 import { QuickLogBar } from '@/components/QuickLogBar';
+import { ErrorState } from '@/components/StateViews';
 import { useProfile, useDailySummary, useLogEntries } from '@/lib/query/hooks';
+import { celebrateGoalMet } from '@/lib/notifications';
+import { analytics } from '@/lib/analytics';
+import { gradients } from '@/lib/theme';
 import { formatProgress, formatVolume } from '@/lib/units';
 
 export default function HomeScreen() {
@@ -21,34 +29,65 @@ export default function HomeScreen() {
   const remaining = Math.max(0, goal - intake);
   const goalMet = summary.data?.goal_met ?? false;
 
+  // Goal-met celebration (US-14): fire once on the false→true transition —
+  // an in-app banner + an out-of-app notification + the success metric.
+  const [celebrating, setCelebrating] = useState(false);
+  const wasGoalMet = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (summary.data == null) return;
+    const prev = wasGoalMet.current;
+    wasGoalMet.current = goalMet;
+    if (prev === false && goalMet) {
+      setCelebrating(true);
+      celebrateGoalMet();
+      analytics.track('goal_met', { goal_ml: goal, total_ml: intake });
+      const t = setTimeout(() => setCelebrating(false), 3500);
+      return () => clearTimeout(t);
+    }
+  }, [goalMet, summary.data]);
+
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <LinearGradient
+        colors={gradients.sky}
+        locations={[0, 0.45, 1]}
+        style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
+      />
       <ScrollView contentContainerClassName="px-6 pt-4 pb-32">
-        <Text className="text-3xl font-bold text-slate-900">Hydro AI</Text>
+        <Text className="text-3xl font-bold text-hydro-950">Hydro AI</Text>
         <Text className="mt-1 text-base text-slate-500">
           {profile.data?.display_name
             ? `Hi ${profile.data.display_name} — let's stay hydrated.`
             : 'Snap a drink to log your hydration.'}
         </Text>
 
-        {/* Progress ring */}
+        {/* Liquid gauge — water rises toward the goal */}
         <View className="mt-8 items-center">
-          <ProgressRing progress={progress}>
+          <LiquidGauge progress={progress}>
             {summary.isLoading ? (
               <ActivityIndicator color="#0EA5E9" />
             ) : (
               <View className="items-center">
-                <Text className="text-4xl font-bold text-slate-900">
-                  {Math.round(progress * 100)}%
-                </Text>
-                <Text className="mt-1 text-sm text-slate-500">
+                <CountUp
+                  value={Math.round(progress * 100)}
+                  suffix="%"
+                  className="text-5xl font-extrabold text-hydro-950"
+                  style={{
+                    textShadowColor: 'rgba(255,255,255,0.7)',
+                    textShadowRadius: 6,
+                  }}
+                />
+                <Text
+                  className="mt-1 text-sm font-medium text-hydro-900"
+                  style={{ textShadowColor: 'rgba(255,255,255,0.7)', textShadowRadius: 4 }}
+                >
                   {formatProgress(intake, goal, unit)}
                 </Text>
               </View>
             )}
-          </ProgressRing>
+          </LiquidGauge>
 
-          <Text className="mt-4 text-center text-sm font-medium text-slate-500">
+          <Text className="mt-5 text-center text-sm font-medium text-slate-500">
             {goalMet
               ? '🎉 Goal reached — nice work!'
               : `${formatVolume(remaining, unit)} to go`}
@@ -72,11 +111,34 @@ export default function HomeScreen() {
           <Text className="mb-3 text-lg font-semibold text-slate-800">Today</Text>
           {entries.isLoading ? (
             <ActivityIndicator className="mt-6" color="#0EA5E9" />
+          ) : entries.isError ? (
+            <ErrorState
+              subtitle="Couldn't load today's drinks."
+              onRetry={() => entries.refetch()}
+            />
           ) : (
             <LogFeed entries={entries.data ?? []} unit={unit} />
           )}
         </View>
       </ScrollView>
+
+      {/* Goal-met celebration banner */}
+      {celebrating && (
+        <Animated.View
+          entering={FadeInDown.springify().damping(16)}
+          exiting={FadeOut}
+          pointerEvents="none"
+          className="absolute inset-x-6 top-16 flex-row items-center gap-3 rounded-2xl bg-hydro-500 px-5 py-4 shadow-lg"
+        >
+          <Text className="text-2xl">🎉</Text>
+          <View className="flex-1">
+            <Text className="text-base font-bold text-white">Goal reached!</Text>
+            <Text className="text-sm text-hydro-50">
+              You hit {formatVolume(goal, unit)} today. Nice work.
+            </Text>
+          </View>
+        </Animated.View>
+      )}
 
       {/* Camera-first: the shutter is the most prominent action (PRD §6). */}
       <Link href="/camera" asChild>
