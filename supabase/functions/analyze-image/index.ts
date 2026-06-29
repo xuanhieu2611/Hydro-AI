@@ -10,10 +10,26 @@
 // Secret: ANTHROPIC_API_KEY is an Edge Function env var, never in the app.
 
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 // Sonnet tier for cost on a high-volume vision task (IMPLEMENTATION_PLAN §0).
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-sonnet-4-6';
+
+// Cost guardrails (IMPLEMENTATION_PLAN §Phase 5). Per-user AI rate limit,
+// enforced server-side via the consume_ai_quota() RPC, plus an upload size cap.
+// All tunable via Edge Function env without a redeploy.
+const RATE_LIMIT_PER_MINUTE = Number(Deno.env.get('AI_RATE_LIMIT_PER_MINUTE') ?? '10');
+const RATE_LIMIT_PER_DAY = Number(Deno.env.get('AI_RATE_LIMIT_PER_DAY') ?? '100');
+// Reject oversized uploads before we pay to forward them. The app sends a
+// downscaled ~1024px JPEG (tens to low-hundreds of KB); 6 MB of base64 is a
+// generous ceiling that still blocks abuse / accidental full-res posts.
+const MAX_IMAGE_BASE64_CHARS = Number(
+  Deno.env.get('AI_MAX_IMAGE_BASE64_CHARS') ?? String(6 * 1024 * 1024),
+);
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -87,6 +103,35 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'image_base64 is required.' }, 400);
   }
 
+  // Guardrail 1: reject oversized uploads before forwarding (cost + abuse).
+  if (image_base64.length > MAX_IMAGE_BASE64_CHARS) {
+    return json({ error: 'Image is too large.' }, 413);
+  }
+
+  // Guardrail 2: per-user rate limit. verify_jwt is on, so the caller's JWT is
+  // present; forward it so consume_ai_quota() charges the right user under RLS.
+  const rate = await checkRateLimit(req);
+  if (rate && !rate.allowed) {
+    return new Response(
+      JSON.stringify({
+        error:
+          rate.limit_kind === 'day'
+            ? "You've reached today's analysis limit. Try again tomorrow."
+            : "You're going a bit fast — give it a moment and try again.",
+        limit_kind: rate.limit_kind,
+        retry_after_seconds: rate.retry_after_seconds,
+      }),
+      {
+        status: 429,
+        headers: {
+          ...corsHeaders,
+          'content-type': 'application/json',
+          'retry-after': String(rate.retry_after_seconds ?? 60),
+        },
+      },
+    );
+  }
+
   // Call Claude Vision with a strict JSON schema so the response is parseable.
   const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -147,6 +192,44 @@ Deno.serve(async (req: Request) => {
   // The image is gone the moment this handler returns — nothing is persisted.
   return json(result, 200);
 });
+
+type RateResult = {
+  allowed: boolean;
+  limit_kind: string | null;
+  retry_after_seconds: number | null;
+};
+
+/**
+ * Charge one AI request against the caller's quota via the consume_ai_quota
+ * RPC (atomic, RLS-scoped to auth.uid()). Returns the decision, or null if the
+ * limiter can't be reached — in which case we FAIL OPEN (allow the request) so
+ * a limiter hiccup never blocks a paying user. The DB RPC is the source of
+ * truth; this is best-effort enforcement on top of it.
+ */
+async function checkRateLimit(req: Request): Promise<RateResult | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  const authorization = req.headers.get('Authorization');
+  if (!authorization) return null;
+
+  try {
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authorization } },
+      auth: { persistSession: false },
+    });
+    const { data, error } = await client.rpc('consume_ai_quota', {
+      p_minute_limit: RATE_LIMIT_PER_MINUTE,
+      p_day_limit: RATE_LIMIT_PER_DAY,
+    });
+    if (error) {
+      console.error('consume_ai_quota failed (failing open):', error.message);
+      return null;
+    }
+    return (Array.isArray(data) ? data[0] : data) as RateResult;
+  } catch (e) {
+    console.error('Rate-limit check threw (failing open):', e);
+    return null;
+  }
+}
 
 function json(data: unknown, status: number): Response {
   return new Response(JSON.stringify(data), {

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, Image } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Image, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
@@ -15,6 +15,7 @@ import {
   FAKE_CAMERA_SAMPLES,
   fakeCaptureUri,
 } from '@/lib/dev/fakeCamera';
+import { RateLimitError } from '@/lib/data/errors';
 import type { AnalysisResult, NewLogEntry } from '@/lib/data/types';
 
 /** Downscale captured photos before analysis — keeps the eventual upload cheap
@@ -53,6 +54,22 @@ export default function CameraModal() {
   const unit = profile.data?.unit_preference ?? 'ml';
   const busy = capturing || analyze.isPending;
 
+  /** Bail out of a failed capture: drop the frozen frame, return to the
+   *  viewfinder, and tell the user what went wrong (rate limit gets a tailored
+   *  message). Without this the polaroid would spin on "Analyzing" forever. */
+  const handleAnalyzeError = (err: unknown) => {
+    setCapturing(false);
+    handleRetake();
+    const message =
+      err instanceof RateLimitError
+        ? err.message
+        : 'Could not analyze that photo. Please try again.';
+    Alert.alert(
+      err instanceof RateLimitError ? 'Slow down a sec' : 'Analysis failed',
+      message,
+    );
+  };
+
   /** Freeze the frame, downscale, then run it through the (mock) analyzer. */
   const analyzeUri = async (uri: string) => {
     setCapturedUri(uri); // freeze instantly — the polaroid takes over from here
@@ -87,8 +104,8 @@ export default function CameraModal() {
         return;
       }
       await analyzeUri(photo.uri);
-    } catch {
-      setCapturing(false);
+    } catch (err) {
+      handleAnalyzeError(err);
     }
   };
 
@@ -104,8 +121,8 @@ export default function CameraModal() {
     setCapturing(true);
     try {
       await analyzeUri(picked.assets[0].uri);
-    } catch {
-      setCapturing(false);
+    } catch (err) {
+      handleAnalyzeError(err);
     }
   };
 

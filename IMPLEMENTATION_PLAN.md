@@ -190,7 +190,7 @@ log_entries(
 - [ ] Test the second platform (Expo gives you both; verify camera/notification quirks on Android/iOS).
 - [ ] **Apple Health / Google Fit** write integration (PRD Phase 1) — requires a config plugin / dev client; HealthKit via `expo-health` or a native module.
 - [ ] AI accuracy pass: collect user corrections (estimated vs adjusted) as a signal to refine the prompt; measure against the ≥85% within ±50ml target.
-- [ ] Cost guardrails on the Edge Function (rate limits, image size caps).
+- [x] Cost guardrails on the Edge Function (rate limits, image size caps). *(Per-user AI rate limit enforced server-side: `ai_usage` table + atomic `consume_ai_quota()` SECURITY DEFINER RPC (per-minute burst + per-day cap, fixed-window; migration `20260629160000_ai_usage_rate_limit.sql`). `analyze-image` forwards the caller JWT, charges the quota before calling Claude, and returns **429 + Retry-After** when over — fail-open if the limiter is unreachable so a hiccup never blocks a user. Also rejects oversized uploads (**413**) before forwarding. Limits tunable via Edge Function env: `AI_RATE_LIMIT_PER_MINUTE` (10), `AI_RATE_LIMIT_PER_DAY` (100), `AI_MAX_IMAGE_BASE64_CHARS` (6 MB). Client surfaces 429 as a typed `RateLimitError` → friendly Alert on the camera (`lib/data/errors.ts`, `EdgeFunctionAnalyzer`, `app/camera.tsx`). Mock path unaffected.)*
 - [ ] App Store / Play Store submission prep.
 
 ---

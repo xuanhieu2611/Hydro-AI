@@ -1,7 +1,9 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 
 import type { Analyzer } from '../analyzer';
 import type { AnalysisResult } from '../types';
+import { RateLimitError } from '../errors';
 import { supabase, ensureSession } from '../../supabase/client';
 
 /**
@@ -22,7 +24,23 @@ export class EdgeFunctionAnalyzer implements Analyzer {
       'analyze-image',
       { body: { image_base64: base64, media_type: 'image/jpeg' } },
     );
-    if (error) throw error;
+    if (error) {
+      // Non-2xx responses arrive as FunctionsHttpError with the body still on
+      // `context`; surface the rate limit (429) as a typed error the UI can act
+      // on, and unwrap other errors to the server's message.
+      if (error instanceof FunctionsHttpError) {
+        const payload = await error.context.json().catch(() => null);
+        if (error.context.status === 429) {
+          throw new RateLimitError(
+            payload?.error ?? 'You’re going a bit fast — try again shortly.',
+            payload?.limit_kind ?? null,
+            payload?.retry_after_seconds ?? null,
+          );
+        }
+        if (payload?.error) throw new Error(payload.error);
+      }
+      throw error;
+    }
     if (!data) throw new Error('analyze-image returned no result.');
     return data;
   }

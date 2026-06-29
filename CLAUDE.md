@@ -65,7 +65,10 @@ supabase/
 > Fake camera flag: `EXPO_PUBLIC_FAKE_CAMERA=1` swaps the `CameraView` for bundled sample photos (`assets/fake-camera/`) fed through the normal downscale→analyze→result-card path — the simulator has no camera (black preview, unusable `takePictureAsync`). Pair with `EXPO_PUBLIC_DATA_SOURCE=mock` for a fully clickable, zero-cost capture flow. Samples are ordered to match `MockAnalyzer`'s script. Off by default / on device. See `lib/dev/fakeCamera.ts`.
 
 ## Data model (see IMPLEMENTATION_PLAN.md §Phase 1 for full SQL)
-`profiles` (goal, units, onboarding_completed, reminder schedule: enabled/interval/window) · `log_entries` (volume, beverage_type, hydration_coefficient, thumbnail_url, ai_confidence_score) · `daily-summary` as a SQL view.
+`profiles` (goal, units, onboarding_completed, reminder schedule: enabled/interval/window) · `log_entries` (volume, beverage_type, hydration_coefficient, thumbnail_url, ai_confidence_score) · `ai_usage` (per-user AI rate-limit counters; written only by the `consume_ai_quota()` RPC) · `daily-summary` as a SQL view.
+
+## Cost guardrails (Edge Function `analyze-image`)
+The AI call is the cost/abuse surface, so it's rate-limited **server-side** (a client-only limit is bypassable). Each request charges the caller's quota via the atomic `consume_ai_quota()` RPC (per-minute burst + per-day cap, RLS-scoped to `auth.uid()`); over-limit returns **429 + Retry-After**, oversized uploads return **413**. Limits are env-tunable without a redeploy (`AI_RATE_LIMIT_PER_MINUTE`=10, `AI_RATE_LIMIT_PER_DAY`=100, `AI_MAX_IMAGE_BASE64_CHARS`=6 MB). The limiter **fails open** if unreachable. Client maps 429 → `RateLimitError` (`lib/data/errors.ts`) → a friendly Alert on the camera. DB migrations now live in `supabase/migrations/` (earlier ones were applied directly to the remote project).
 
 ## When in doubt
 - Scope/priority questions → check the PRD's user-story priorities (P0/P1/P2) and the phase plan; build P0 first.
