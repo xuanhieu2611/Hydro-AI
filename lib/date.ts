@@ -30,3 +30,18 @@ export function formatTime(isoTimestamp: string): string {
     minute: '2-digit',
   });
 }
+
+/** A 'YYYY-MM-DD' key as a local Date at midnight. */
+export function dateFromKey(dateKey: string): Date {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** Full day label for a date key, e.g. "Sat, Jun 28". */
+export function formatDayLabel(dateKey: string): string {
+  return dateFromKey(dateKey).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}

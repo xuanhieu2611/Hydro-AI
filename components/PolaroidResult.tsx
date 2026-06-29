@@ -7,6 +7,7 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   withRepeat,
+  withSequence,
   cancelAnimation,
   interpolate,
   Easing,
@@ -29,14 +30,17 @@ const STATUS_STEPS = [
 ];
 
 const DEVELOP_MS = 1600; // dim → bright + haze clear
-// One shimmer pass == one reasoning step: the sweep "scans" the photo, and the
-// status text flips to the next step exactly when the sweep completes. Both run
-// off this single cadence so they stay locked together.
-const SWEEP_MS = 900;
-// Floor on the "thinking" sequence so every step is seen even if the analyzer
-// returns instantly (mock, or a fast backend). Covers all three scans + a beat
-// to linger on "Estimating volume…". A slower API just extends past this.
-const MIN_ANALYZE_MS = SWEEP_MS * STATUS_STEPS.length + 300; // ≈ 3000ms
+// One shimmer pass == one reasoning step: the sweep "scans" the photo, the text
+// flips to the next step the moment the sweep reaches the right edge, then the
+// bar rests off-screen for GAP_MS before the next scan — a deliberate
+// scan → conclude → beat → scan rhythm. Both run off this one cadence.
+const SWEEP_MS = 800; // visible left → right scan
+const GAP_MS = 400; // pause after a scan before the next
+const CYCLE_MS = SWEEP_MS + GAP_MS;
+// Floor on the "thinking" sequence so every step gets its own scan even if the
+// analyzer returns instantly (mock, or a fast backend): last step appears after
+// (n-1) cycles, then we let its scan play + a beat. A slower API extends past this.
+const MIN_ANALYZE_MS = (STATUS_STEPS.length - 1) * CYCLE_MS + SWEEP_MS + 250; // ≈ 3450ms
 const PRINT_W = 280; // film-print width (photo + frame)
 
 interface PolaroidResultProps {
@@ -92,21 +96,30 @@ export function PolaroidResult({
   // stop the instant we reveal the result.
   useEffect(() => {
     if (reveal) return;
-    // Sweep and step share one clock, started together: the text advances right
-    // as each sweep wraps (1 → -1 happens off-screen, so the jump is invisible).
+    // Each cycle: scan L→R (visible), rest off-screen-right for GAP_MS, then
+    // snap back off-screen-left (instant, unseen) and scan again.
     shimmer.value = -1;
     shimmer.value = withRepeat(
-      withTiming(1, { duration: SWEEP_MS, easing: Easing.linear }),
+      withSequence(
+        withTiming(1, { duration: SWEEP_MS, easing: Easing.linear }),
+        withTiming(1, { duration: GAP_MS }), // hold off-screen (the pause)
+        withTiming(-1, { duration: 0 }), // reset off-screen-left, unseen
+      ),
       -1,
       false,
     );
-    const id = setInterval(
-      () => setStepIndex((i) => Math.min(i + 1, STATUS_STEPS.length - 1)),
-      SWEEP_MS,
-    );
+    // Flip the text the instant each scan reaches the right edge: first at
+    // SWEEP_MS, then once per cycle. Holds on the last step.
+    const flip = () => setStepIndex((i) => Math.min(i + 1, STATUS_STEPS.length - 1));
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const first = setTimeout(() => {
+      flip();
+      interval = setInterval(flip, CYCLE_MS);
+    }, SWEEP_MS);
     return () => {
       cancelAnimation(shimmer);
-      clearInterval(id);
+      clearTimeout(first);
+      if (interval) clearInterval(interval);
     };
   }, [reveal, shimmer]);
 

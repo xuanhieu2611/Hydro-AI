@@ -6,19 +6,29 @@ import {
   TextInput,
   ActivityIndicator,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, {
+  SlideInRight,
+  SlideInLeft,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
 
 import { VolumeAdjuster } from '@/components/VolumeAdjuster';
 import { LiquidGauge } from '@/components/LiquidGauge';
-import { gradients } from '@/lib/theme';
+import { colors, gradients } from '@/lib/theme';
 import { useUpdateProfile } from '@/lib/query/hooks';
 import { analytics } from '@/lib/analytics';
+import { tapSelection } from '@/lib/haptics';
 import {
   ACTIVITY_META,
   lbToKg,
@@ -30,32 +40,47 @@ import type { UnitPreference } from '@/lib/data/types';
 
 type Step = 0 | 1 | 2 | 3 | 4;
 const LAST_STEP: Step = 4;
+const STEP_COUNT = 5;
 
 const DEFAULT_GOAL_ML = 2000;
 
 /**
- * First-run onboarding (PRD §4.5). Collects a daily goal + unit preference and
- * an optional notifications opt-in, then marks `onboarding_completed` so the
- * gate stops redirecting here. Each screen is a step in local state — no nested
- * routes needed, and Skip jumps straight to the finish for fast iteration.
+ * First-run onboarding (PRD §4.5). Collects a name, a daily goal + unit
+ * preference and an optional notifications opt-in, then marks
+ * `onboarding_completed` so the gate stops redirecting here. Each screen is a
+ * step in local state — no nested routes needed, and Skip jumps straight to the
+ * finish for fast iteration.
  */
 export default function Onboarding() {
   const router = useRouter();
   const updateProfile = useUpdateProfile();
 
   const [step, setStep] = useState<Step>(0);
+  // Direction drives the slide transition (forward vs back).
+  const [dir, setDir] = useState<1 | -1>(1);
+  const [name, setName] = useState('');
   const [unit, setUnit] = useState<UnitPreference>('ml');
   const [goalMl, setGoalMl] = useState(DEFAULT_GOAL_ML);
   const [notify, setNotify] = useState(false);
 
-  const next = () => setStep((s) => Math.min(LAST_STEP, s + 1) as Step);
-  const back = () => setStep((s) => Math.max(0, s - 1) as Step);
+  const next = () => {
+    tapSelection();
+    setDir(1);
+    setStep((s) => Math.min(LAST_STEP, s + 1) as Step);
+  };
+  const back = () => {
+    tapSelection();
+    setDir(-1);
+    setStep((s) => Math.max(0, s - 1) as Step);
+  };
 
   /** Persist the collected settings, flip the gate, then leave onboarding. */
   const finish = async (thenCamera: boolean) => {
     // Skip = leaving before the final step (settings stay at their defaults).
     const skipped = step < LAST_STEP;
+    const trimmedName = name.trim();
     await updateProfile.mutateAsync({
+      display_name: trimmedName.length ? trimmedName : null,
       daily_goal_ml: goalMl,
       unit_preference: unit,
       reminders_enabled: notify,
@@ -73,6 +98,8 @@ export default function Onboarding() {
     router.replace(thenCamera ? '/camera' : '/(tabs)');
   };
 
+  const Entering = dir === 1 ? SlideInRight : SlideInLeft;
+
   return (
     <SafeAreaView className="flex-1 bg-white">
       <LinearGradient
@@ -80,85 +107,143 @@ export default function Onboarding() {
         locations={[0, 0.45, 1]}
         style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
       />
-      {/* Header: progress dots + Skip */}
-      <View className="flex-row items-center justify-between px-6 pt-2">
-        <View className="flex-row gap-1.5">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <View
-              key={i}
-              className={`h-1.5 rounded-full ${
-                i === step ? 'w-5 bg-hydro-500' : 'w-1.5 bg-slate-200'
-              }`}
-            />
-          ))}
-        </View>
-        {step < LAST_STEP && (
-          <Pressable onPress={() => finish(false)} disabled={updateProfile.isPending} hitSlop={8}>
-            <Text className="text-sm font-medium text-slate-400">Skip</Text>
-          </Pressable>
-        )}
-      </View>
-
-      <Animated.View key={step} entering={FadeIn.duration(250)} className="flex-1">
-        {step === 0 && <Welcome />}
-        {step === 1 && (
-          <GoalStep unit={unit} goalMl={goalMl} onChangeGoal={setGoalMl} />
-        )}
-        {step === 2 && <UnitStep unit={unit} onChange={setUnit} />}
-        {step === 3 && <NotificationsStep enabled={notify} onChange={setNotify} />}
-        {step === 4 && <FirstLog />}
-      </Animated.View>
-
-      {/* Footer actions */}
-      <View className="gap-2 px-6 pb-8">
-        {step === LAST_STEP ? (
-          <>
-            <PrimaryButton
-              label="Take a photo of a drink"
-              icon="camera"
-              loading={updateProfile.isPending}
-              onPress={() => finish(true)}
-            />
-            <Pressable onPress={() => finish(false)} disabled={updateProfile.isPending} className="py-3">
-              <Text className="text-center text-sm font-medium text-slate-500">
-                Maybe later — go to home
-              </Text>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        {/* Header: progress bar + Skip */}
+        <View className="flex-row items-center gap-4 px-6 pt-2">
+          <ProgressBar step={step} />
+          {step < LAST_STEP ? (
+            <Pressable
+              onPress={() => finish(false)}
+              disabled={updateProfile.isPending}
+              hitSlop={8}
+            >
+              <Text className="text-sm font-medium text-slate-400">Skip</Text>
             </Pressable>
-          </>
-        ) : (
-          <View className="flex-row items-center gap-3">
-            {step > 0 && (
+          ) : (
+            <View className="w-7" />
+          )}
+        </View>
+
+        <Animated.View
+          key={step}
+          entering={Entering.duration(320).easing(Easing.out(Easing.cubic))}
+          className="flex-1"
+        >
+          {step === 0 && <Welcome name={name} onChangeName={setName} />}
+          {step === 1 && (
+            <GoalStep unit={unit} goalMl={goalMl} onChangeGoal={setGoalMl} />
+          )}
+          {step === 2 && <UnitStep unit={unit} onChange={setUnit} />}
+          {step === 3 && <NotificationsStep enabled={notify} onChange={setNotify} />}
+          {step === 4 && <FirstLog name={name} />}
+        </Animated.View>
+
+        {/* Footer actions */}
+        <View className="gap-2 px-6 pb-8">
+          {step === LAST_STEP ? (
+            <>
+              <PrimaryButton
+                label="Take a photo of a drink"
+                icon="camera"
+                loading={updateProfile.isPending}
+                onPress={() => finish(true)}
+              />
               <Pressable
-                onPress={back}
-                className="h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 active:bg-slate-50"
+                onPress={() => finish(false)}
+                disabled={updateProfile.isPending}
+                className="py-3"
               >
-                <Ionicons name="arrow-back" size={22} color="#475569" />
+                <Text className="text-center text-sm font-medium text-slate-500">
+                  Maybe later — go to home
+                </Text>
               </Pressable>
-            )}
-            <View className="flex-1">
-              <PrimaryButton label="Continue" onPress={next} />
+            </>
+          ) : (
+            <View className="flex-row items-center gap-3">
+              {step > 0 && (
+                <Pressable
+                  onPress={back}
+                  className="h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white/60 active:bg-slate-50"
+                >
+                  <Ionicons name="arrow-back" size={22} color="#475569" />
+                </Pressable>
+              )}
+              <View className="flex-1">
+                <PrimaryButton label="Continue" onPress={next} />
+              </View>
             </View>
-          </View>
-        )}
-      </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+/** Animated segmented progress bar — the current segment fills left to right. */
+function ProgressBar({ step }: { step: number }) {
+  return (
+    <View className="flex-1 flex-row gap-1.5">
+      {Array.from({ length: STEP_COUNT }).map((_, i) => (
+        <ProgressSegment key={i} active={i === step} done={i < step} />
+      ))}
+    </View>
+  );
+}
+
+function ProgressSegment({ active, done }: { active: boolean; done: boolean }) {
+  const fill = useSharedValue(done ? 1 : 0);
+  useEffect(() => {
+    fill.value = withTiming(done || active ? 1 : 0, {
+      duration: active ? 320 : 200,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [active, done]);
+  const style = useAnimatedStyle(() => ({ width: `${fill.value * 100}%` }));
+  return (
+    <View className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
+      <Animated.View style={style} className="h-full rounded-full bg-hydro-500" />
+    </View>
   );
 }
 
 /* --------------------------------- steps ---------------------------------- */
 
-function Welcome() {
+function Welcome({
+  name,
+  onChangeName,
+}: {
+  name: string;
+  onChangeName: (v: string) => void;
+}) {
   return (
     <StepBody>
       <View className="flex-1 items-center justify-center">
-        <LiquidGauge progress={0.68} size={180}>
+        <LiquidGauge progress={0.68} size={172}>
           <Text className="text-5xl">💧</Text>
         </LiquidGauge>
         <Text className="mt-8 text-3xl font-bold text-hydro-950">Hydro AI</Text>
-        <Text className="mt-3 text-center text-base text-slate-500">
+        <Text className="mt-3 text-center text-base leading-6 text-slate-500">
           Snap a photo of any drink and we&apos;ll estimate the volume and log it —
           no typing, no guesswork.
         </Text>
+
+        <View className="mt-10 w-full">
+          <Text className="mb-2 ml-1 text-sm font-semibold text-slate-500">
+            What should we call you?
+          </Text>
+          <TextInput
+            value={name}
+            onChangeText={onChangeName}
+            placeholder="Your name (optional)"
+            placeholderTextColor={colors.slate[400]}
+            returnKeyType="done"
+            maxLength={24}
+            className="rounded-2xl border border-slate-200 bg-white/70 px-4 py-3.5 text-lg text-slate-900"
+          />
+        </View>
       </View>
     </StepBody>
   );
@@ -217,8 +302,8 @@ function GoalStep({
                 onChangeText={setWeight}
                 keyboardType="numeric"
                 placeholder="e.g. 70"
-                placeholderTextColor="#CBD5E1"
-                className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-lg text-slate-900"
+                placeholderTextColor={colors.slate[400]}
+                className="flex-1 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-lg text-slate-900"
               />
               <Segmented
                 compact
@@ -243,11 +328,14 @@ function GoalStep({
                 return (
                   <Pressable
                     key={level}
-                    onPress={() => setActivity(level)}
+                    onPress={() => {
+                      tapSelection();
+                      setActivity(level);
+                    }}
                     className={`flex-row items-center justify-between rounded-2xl border px-4 py-3 ${
                       selected
                         ? 'border-hydro-500 bg-hydro-50'
-                        : 'border-slate-200 active:bg-slate-50'
+                        : 'border-slate-200 bg-white/60 active:bg-slate-50'
                     }`}
                   >
                     <View>
@@ -257,7 +345,7 @@ function GoalStep({
                       <Text className="text-xs text-slate-400">{meta.description}</Text>
                     </View>
                     {selected && (
-                      <Ionicons name="checkmark-circle" size={22} color="#0EA5E9" />
+                      <Ionicons name="checkmark-circle" size={22} color={colors.hydro[500]} />
                     )}
                   </Pressable>
                 );
@@ -266,7 +354,7 @@ function GoalStep({
           </View>
         </View>
       ) : (
-        <View className="mt-8">
+        <View className="mt-8 rounded-3xl border border-white/80 bg-white/70 px-5 py-6" style={cardShadow}>
           <VolumeAdjuster
             valueMl={goalMl}
             onChange={onChangeGoal}
@@ -278,7 +366,7 @@ function GoalStep({
         </View>
       )}
 
-      <View className="mt-8 items-center rounded-2xl bg-hydro-50 py-5">
+      <View className="mt-8 items-center rounded-3xl bg-hydro-50 py-5">
         <Text className="text-sm font-medium text-hydro-700">Your daily goal</Text>
         <Text className="mt-1 text-4xl font-bold text-hydro-600">
           {formatVolume(effectiveGoal, unit)}
@@ -312,15 +400,22 @@ function UnitStep({
           return (
             <Pressable
               key={u}
-              onPress={() => onChange(u)}
+              onPress={() => {
+                tapSelection();
+                onChange(u);
+              }}
               className={`flex-row items-center justify-between rounded-2xl border px-5 py-4 ${
-                selected ? 'border-hydro-500 bg-hydro-50' : 'border-slate-200 active:bg-slate-50'
+                selected
+                  ? 'border-hydro-500 bg-hydro-50'
+                  : 'border-slate-200 bg-white/60 active:bg-slate-50'
               }`}
             >
               <Text className="text-lg font-semibold text-slate-800">
                 {u === 'ml' ? 'Milliliters (ml)' : 'Fluid ounces (oz)'}
               </Text>
-              {selected && <Ionicons name="checkmark-circle" size={24} color="#0EA5E9" />}
+              {selected && (
+                <Ionicons name="checkmark-circle" size={24} color={colors.hydro[500]} />
+              )}
             </Pressable>
           );
         })}
@@ -337,6 +432,7 @@ function NotificationsStep({
   onChange: (v: boolean) => void;
 }) {
   const toggle = async () => {
+    tapSelection();
     if (!enabled) {
       // Ask the OS now; actual scheduling lands in Phase 4.
       const { status } = await Notifications.requestPermissionsAsync();
@@ -350,10 +446,10 @@ function NotificationsStep({
     <StepBody>
       <View className="flex-1 items-center justify-center">
         <View className="h-20 w-20 items-center justify-center rounded-full bg-hydro-50">
-          <Ionicons name="notifications" size={40} color="#0EA5E9" />
+          <Ionicons name="notifications" size={40} color={colors.hydro[500]} />
         </View>
         <Text className="mt-6 text-2xl font-bold text-slate-900">Stay on track</Text>
-        <Text className="mt-2 text-center text-base text-slate-500">
+        <Text className="mt-2 text-center text-base leading-6 text-slate-500">
           Gentle reminders to drink — suggested every 2 hours, 8am–8pm. You can
           fine-tune the schedule later.
         </Text>
@@ -366,7 +462,7 @@ function NotificationsStep({
           <Ionicons
             name={enabled ? 'checkmark-circle' : 'notifications-outline'}
             size={20}
-            color={enabled ? '#0284C7' : 'white'}
+            color={enabled ? colors.hydro[600] : 'white'}
           />
           <Text
             className={`text-lg font-semibold ${enabled ? 'text-hydro-700' : 'text-white'}`}
@@ -379,13 +475,18 @@ function NotificationsStep({
   );
 }
 
-function FirstLog() {
+function FirstLog({ name }: { name: string }) {
+  const greeting = name.trim().length ? `You're all set, ${name.trim()}!` : "You're all set!";
   return (
     <StepBody>
       <View className="flex-1 items-center justify-center">
-        <Text className="text-7xl">📸</Text>
-        <Text className="mt-6 text-3xl font-bold text-slate-900">You&apos;re all set!</Text>
-        <Text className="mt-3 text-center text-base text-slate-500">
+        <View className="h-24 w-24 items-center justify-center rounded-full bg-hydro-50">
+          <Text className="text-6xl">📸</Text>
+        </View>
+        <Text className="mt-6 text-center text-3xl font-bold text-slate-900">
+          {greeting}
+        </Text>
+        <Text className="mt-3 text-center text-base leading-6 text-slate-500">
           Try it now — take a photo of a drink near you and watch Hydro AI log it.
         </Text>
       </View>
@@ -394,6 +495,13 @@ function FirstLog() {
 }
 
 /* ------------------------------- primitives ------------------------------- */
+
+const cardShadow = {
+  shadowColor: '#0C4A6E',
+  shadowOpacity: 0.08,
+  shadowRadius: 12,
+  shadowOffset: { width: 0, height: 6 },
+} as const;
 
 function StepBody({
   children,
@@ -407,6 +515,7 @@ function StepBody({
       <ScrollView
         contentContainerClassName="px-6 pt-8 pb-6"
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         {children}
       </ScrollView>
@@ -467,7 +576,10 @@ function Segmented({
         return (
           <Pressable
             key={opt.value}
-            onPress={() => onChange(opt.value)}
+            onPress={() => {
+              tapSelection();
+              onChange(opt.value);
+            }}
             className={`items-center rounded-xl py-2 ${compact ? 'px-4' : 'flex-1'} ${
               selected ? 'bg-white' : ''
             }`}

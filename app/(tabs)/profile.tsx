@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,18 @@ import {
   Switch,
   Alert,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
 import { VolumeAdjuster } from '@/components/VolumeAdjuster';
-import { gradients } from '@/lib/theme';
+import { colors, gradients } from '@/lib/theme';
 import {
   useProfile,
+  useHistory,
   useUpdateProfile,
   useClearAllData,
   useDeleteAccount,
@@ -23,10 +26,13 @@ import {
 import { formatVolume } from '@/lib/units';
 import { syncReminders, cancelAllReminders } from '@/lib/notifications';
 import { analytics } from '@/lib/analytics';
-import type { Profile, UnitPreference } from '@/lib/data/types';
+import { tapSelection } from '@/lib/haptics';
+import { computeStreaks } from '@/lib/streak';
+import type { DailySummary, Profile, UnitPreference } from '@/lib/data/types';
 
 export default function ProfileScreen() {
   const profile = useProfile();
+  const history = useHistory(30);
   const updateProfile = useUpdateProfile();
   const clearData = useClearAllData();
   const deleteAccount = useDeleteAccount();
@@ -46,7 +52,15 @@ export default function ProfileScreen() {
   };
 
   const setUnit = (next: UnitPreference) => {
-    if (next !== unit) updateProfile.mutate({ unit_preference: next });
+    if (next !== unit) {
+      tapSelection();
+      updateProfile.mutate({ unit_preference: next });
+    }
+  };
+
+  const saveName = (name: string) => {
+    const trimmed = name.trim();
+    updateProfile.mutate({ display_name: trimmed.length ? trimmed : null });
   };
 
   const replayOnboarding = () => {
@@ -117,7 +131,7 @@ export default function ProfileScreen() {
   if (profile.isLoading || goalMl == null || !profile.data) {
     return (
       <SafeAreaView className="flex-1 items-center justify-center bg-white" edges={['top']}>
-        <ActivityIndicator color="#0EA5E9" />
+        <ActivityIndicator color={colors.hydro[500]} />
       </SafeAreaView>
     );
   }
@@ -131,196 +145,376 @@ export default function ProfileScreen() {
         locations={[0, 0.45, 1]}
         style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
       />
-      <ScrollView contentContainerClassName="px-6 pt-4 pb-12">
+      <ScrollView
+        contentContainerClassName="px-6 pt-4 pb-16"
+        showsVerticalScrollIndicator={false}
+      >
         <Text className="text-3xl font-bold text-hydro-950">Profile</Text>
-        <Text className="mt-1 text-base text-slate-500">
-          {p.display_name ?? 'Your hydration settings'}
-        </Text>
+
+        {/* Identity — avatar, editable name, member since */}
+        <Animated.View entering={FadeInDown.springify().damping(18)}>
+          <IdentityHeader
+            name={p.display_name}
+            createdAt={p.created_at}
+            onSaveName={saveName}
+          />
+        </Animated.View>
+
+        {/* Hero stats — a sense of progress, not just settings */}
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(60)}>
+          <StatStrip days={history.data ?? []} unit={unit} />
+        </Animated.View>
 
         {/* Daily goal (US-07) */}
-        <Section title="Daily goal">
-          <VolumeAdjuster
-            valueMl={goalMl}
-            onChange={setGoalMl}
-            unit={unit}
-            stepMl={100}
-            minMl={500}
-            maxMl={5000}
-          />
-          {goalDirty && (
-            <Pressable
-              onPress={saveGoal}
-              disabled={updateProfile.isPending}
-              className="mt-5 h-12 flex-row items-center justify-center gap-2 rounded-2xl bg-hydro-500 active:bg-hydro-600"
-            >
-              {updateProfile.isPending ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text className="text-base font-semibold text-white">
-                  Save goal ({formatVolume(goalMl, unit)})
-                </Text>
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(120)}>
+          <Section title="Daily goal">
+            <Card className="px-5 py-5">
+              <VolumeAdjuster
+                valueMl={goalMl}
+                onChange={setGoalMl}
+                unit={unit}
+                stepMl={100}
+                minMl={500}
+                maxMl={5000}
+              />
+              {goalDirty && (
+                <Pressable
+                  onPress={saveGoal}
+                  disabled={updateProfile.isPending}
+                  className="mt-5 h-12 flex-row items-center justify-center gap-2 rounded-2xl bg-hydro-500 active:bg-hydro-600"
+                >
+                  {updateProfile.isPending ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text className="text-base font-semibold text-white">
+                      Save goal ({formatVolume(goalMl, unit)})
+                    </Text>
+                  )}
+                </Pressable>
               )}
-            </Pressable>
-          )}
-        </Section>
+            </Card>
+          </Section>
+        </Animated.View>
 
         {/* Units (US-07) */}
-        <Section title="Units">
-          <View className="flex-row rounded-2xl bg-slate-100 p-1">
-            {(['ml', 'oz'] as UnitPreference[]).map((u) => {
-              const selected = u === unit;
-              return (
-                <Pressable
-                  key={u}
-                  onPress={() => setUnit(u)}
-                  className={`flex-1 items-center rounded-xl py-2.5 ${
-                    selected ? 'bg-white' : ''
-                  }`}
-                >
-                  <Text
-                    className={`text-sm font-semibold ${
-                      selected ? 'text-slate-900' : 'text-slate-500'
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(180)}>
+          <Section title="Units">
+            <Card className="flex-row p-1.5">
+              {(['ml', 'oz'] as UnitPreference[]).map((u) => {
+                const selected = u === unit;
+                return (
+                  <Pressable
+                    key={u}
+                    onPress={() => setUnit(u)}
+                    className={`flex-1 items-center rounded-2xl py-3 ${
+                      selected ? 'bg-hydro-500' : ''
                     }`}
                   >
-                    {u === 'ml' ? 'Milliliters' : 'Fluid ounces'}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Section>
+                    <Text
+                      className={`text-sm font-semibold ${
+                        selected ? 'text-white' : 'text-slate-500'
+                      }`}
+                    >
+                      {u === 'ml' ? 'Milliliters' : 'Fluid ounces'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </Card>
+          </Section>
+        </Animated.View>
 
         {/* Reminders (US-13) */}
-        <Section title="Reminders">
-          <View className="flex-row items-center justify-between rounded-2xl border border-slate-100 bg-white px-4 py-3.5">
-            <View className="flex-1 pr-3">
-              <Text className="text-base font-semibold text-slate-800">
-                Drink reminders
-              </Text>
-              <Text className="text-xs text-slate-400">
-                Gentle nudges during your day.
-              </Text>
-            </View>
-            <Switch
-              value={p.reminders_enabled}
-              onValueChange={(v) => patchReminders({ reminders_enabled: v })}
-              trackColor={{ true: '#0EA5E9' }}
-            />
-          </View>
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(240)}>
+          <Section title="Reminders">
+            <Card className="px-4 py-3.5">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-1 pr-3">
+                  <Text className="text-base font-semibold text-slate-800">
+                    Drink reminders
+                  </Text>
+                  <Text className="mt-0.5 text-xs text-slate-400">
+                    Gentle nudges during your day.
+                  </Text>
+                </View>
+                <Switch
+                  value={p.reminders_enabled}
+                  onValueChange={(v) => {
+                    tapSelection();
+                    patchReminders({ reminders_enabled: v });
+                  }}
+                  trackColor={{ true: colors.hydro[500] }}
+                />
+              </View>
 
-          {p.reminders_enabled && (
-            <View className="mt-3 gap-3">
-              <Stepper
-                label="Every"
-                value={`${p.reminder_interval_hours} h`}
-                onDec={() =>
-                  patchReminders({
-                    reminder_interval_hours: Math.max(1, p.reminder_interval_hours - 1),
-                  })
-                }
-                onInc={() =>
-                  patchReminders({
-                    reminder_interval_hours: Math.min(6, p.reminder_interval_hours + 1),
-                  })
-                }
-                canDec={p.reminder_interval_hours > 1}
-                canInc={p.reminder_interval_hours < 6}
-              />
-              <Stepper
-                label="From"
-                value={formatHour(p.reminder_window_start_hour)}
-                onDec={() =>
-                  patchReminders({
-                    reminder_window_start_hour: Math.max(0, p.reminder_window_start_hour - 1),
-                  })
-                }
-                onInc={() =>
-                  patchReminders({
-                    reminder_window_start_hour: Math.min(
-                      p.reminder_window_end_hour - 1,
-                      p.reminder_window_start_hour + 1,
-                    ),
-                  })
-                }
-                canDec={p.reminder_window_start_hour > 0}
-                canInc={p.reminder_window_start_hour < p.reminder_window_end_hour - 1}
-              />
-              <Stepper
-                label="Until"
-                value={formatHour(p.reminder_window_end_hour)}
-                onDec={() =>
-                  patchReminders({
-                    reminder_window_end_hour: Math.max(
-                      p.reminder_window_start_hour + 1,
-                      p.reminder_window_end_hour - 1,
-                    ),
-                  })
-                }
-                onInc={() =>
-                  patchReminders({
-                    reminder_window_end_hour: Math.min(23, p.reminder_window_end_hour + 1),
-                  })
-                }
-                canDec={p.reminder_window_end_hour > p.reminder_window_start_hour + 1}
-                canInc={p.reminder_window_end_hour < 23}
-              />
-            </View>
-          )}
-        </Section>
+              {p.reminders_enabled && (
+                <View className="mt-3.5 gap-1 border-t border-slate-100 pt-2">
+                  <Stepper
+                    label="Every"
+                    value={`${p.reminder_interval_hours} h`}
+                    onDec={() =>
+                      patchReminders({
+                        reminder_interval_hours: Math.max(1, p.reminder_interval_hours - 1),
+                      })
+                    }
+                    onInc={() =>
+                      patchReminders({
+                        reminder_interval_hours: Math.min(6, p.reminder_interval_hours + 1),
+                      })
+                    }
+                    canDec={p.reminder_interval_hours > 1}
+                    canInc={p.reminder_interval_hours < 6}
+                  />
+                  <Stepper
+                    label="From"
+                    value={formatHour(p.reminder_window_start_hour)}
+                    onDec={() =>
+                      patchReminders({
+                        reminder_window_start_hour: Math.max(0, p.reminder_window_start_hour - 1),
+                      })
+                    }
+                    onInc={() =>
+                      patchReminders({
+                        reminder_window_start_hour: Math.min(
+                          p.reminder_window_end_hour - 1,
+                          p.reminder_window_start_hour + 1,
+                        ),
+                      })
+                    }
+                    canDec={p.reminder_window_start_hour > 0}
+                    canInc={p.reminder_window_start_hour < p.reminder_window_end_hour - 1}
+                  />
+                  <Stepper
+                    label="Until"
+                    value={formatHour(p.reminder_window_end_hour)}
+                    onDec={() =>
+                      patchReminders({
+                        reminder_window_end_hour: Math.max(
+                          p.reminder_window_start_hour + 1,
+                          p.reminder_window_end_hour - 1,
+                        ),
+                      })
+                    }
+                    onInc={() =>
+                      patchReminders({
+                        reminder_window_end_hour: Math.min(23, p.reminder_window_end_hour + 1),
+                      })
+                    }
+                    canDec={p.reminder_window_end_hour > p.reminder_window_start_hour + 1}
+                    canInc={p.reminder_window_end_hour < 23}
+                  />
+                </View>
+              )}
+            </Card>
+          </Section>
+        </Animated.View>
 
         {/* Privacy (PRD privacy promise) */}
-        <Section title="Privacy">
-          <View className="flex-row gap-3 rounded-2xl bg-hydro-50 px-4 py-4">
-            <Ionicons name="lock-closed" size={18} color="#0284C7" />
-            <Text className="flex-1 text-sm leading-5 text-hydro-700">
-              Photos are processed and discarded — only the estimated volume and
-              drink type are saved. Full-resolution images never leave your device.
-            </Text>
-          </View>
-        </Section>
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(300)}>
+          <Section title="Privacy">
+            <View className="flex-row gap-3 rounded-3xl border border-hydro-100 bg-hydro-50 px-4 py-4">
+              <Ionicons name="lock-closed" size={18} color={colors.hydro[600]} />
+              <Text className="flex-1 text-sm leading-5 text-hydro-700">
+                Photos are processed and discarded — only the estimated volume and
+                drink type are saved. Full-resolution images never leave your device.
+              </Text>
+            </View>
+          </Section>
+        </Animated.View>
 
         {/* Data & account (GDPR/CCPA) */}
-        <Section title="Data & account">
-          <Pressable
-            onPress={confirmClear}
-            disabled={clearData.isPending}
-            className="flex-row items-center gap-3 rounded-2xl border border-slate-100 px-4 py-3.5 active:bg-slate-50"
-          >
-            {clearData.isPending ? (
-              <ActivityIndicator color="#64748B" />
-            ) : (
-              <Ionicons name="trash-outline" size={18} color="#64748B" />
-            )}
-            <Text className="text-base font-medium text-slate-700">
-              Clear all history
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={confirmDelete}
-            disabled={deleteAccount.isPending}
-            className="mt-2 flex-row items-center gap-3 rounded-2xl border border-red-100 px-4 py-3.5 active:bg-red-50"
-          >
-            {deleteAccount.isPending ? (
-              <ActivityIndicator color="#EF4444" />
-            ) : (
-              <Ionicons name="person-remove-outline" size={18} color="#EF4444" />
-            )}
-            <Text className="text-base font-medium text-red-500">Delete account</Text>
-          </Pressable>
-        </Section>
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(360)}>
+          <Section title="Data & account">
+            <Card>
+              <Row
+                icon="trash-outline"
+                label="Clear all history"
+                onPress={confirmClear}
+                loading={clearData.isPending}
+              />
+              <Divider />
+              <Row
+                icon="person-remove-outline"
+                label="Delete account"
+                onPress={confirmDelete}
+                loading={deleteAccount.isPending}
+                destructive
+              />
+            </Card>
+          </Section>
+        </Animated.View>
 
-        {/* Replay onboarding (handy while iterating on the flow) */}
-        <Pressable
-          onPress={replayOnboarding}
-          className="mt-8 flex-row items-center gap-2 py-3"
-        >
-          <Ionicons name="refresh" size={18} color="#64748B" />
-          <Text className="text-sm font-medium text-slate-500">Replay onboarding</Text>
-        </Pressable>
+        {/* About */}
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(420)}>
+          <Section title="About">
+            <Card>
+              <Row
+                icon="refresh"
+                label="Replay onboarding"
+                onPress={replayOnboarding}
+                chevron
+              />
+              <Divider />
+              <View className="flex-row items-center justify-between px-4 py-3.5">
+                <View className="flex-row items-center gap-3">
+                  <Ionicons name="water-outline" size={18} color={colors.slate[400]} />
+                  <Text className="text-base font-medium text-slate-700">Version</Text>
+                </View>
+                <Text className="text-sm font-medium text-slate-400">Hydro AI 1.0.0</Text>
+              </View>
+            </Card>
+          </Section>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+/* ------------------------------- identity --------------------------------- */
+
+function IdentityHeader({
+  name,
+  createdAt,
+  onSaveName,
+}: {
+  name: string | null;
+  createdAt: string;
+  onSaveName: (name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name ?? '');
+
+  const begin = () => {
+    setDraft(name ?? '');
+    setEditing(true);
+  };
+  const commit = () => {
+    setEditing(false);
+    if (draft.trim() !== (name ?? '')) onSaveName(draft);
+  };
+
+  const initial = name?.trim()?.[0]?.toUpperCase() ?? null;
+
+  return (
+    <View className="mt-5 flex-row items-center gap-4">
+      <LinearGradient
+        colors={gradients.hero}
+        style={{ width: 64, height: 64, borderRadius: 32 }}
+        className="items-center justify-center"
+      >
+        {initial ? (
+          <Text className="text-2xl font-bold text-white">{initial}</Text>
+        ) : (
+          <Text className="text-3xl">💧</Text>
+        )}
+      </LinearGradient>
+
+      <View className="flex-1">
+        {editing ? (
+          <View className="flex-row items-center gap-2">
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              autoFocus
+              placeholder="Your name"
+              placeholderTextColor={colors.slate[400]}
+              returnKeyType="done"
+              onSubmitEditing={commit}
+              onBlur={commit}
+              maxLength={24}
+              className="flex-1 border-b border-hydro-300 pb-1 text-2xl font-bold text-hydro-950"
+            />
+            <Pressable onPress={commit} hitSlop={8}>
+              <Ionicons name="checkmark-circle" size={26} color={colors.hydro[500]} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable onPress={begin} className="flex-row items-center gap-2" hitSlop={6}>
+            <Text
+              className={`text-2xl font-bold ${name ? 'text-hydro-950' : 'text-slate-400'}`}
+            >
+              {name ?? 'Add your name'}
+            </Text>
+            <Ionicons name="pencil" size={15} color={colors.slate[400]} />
+          </Pressable>
+        )}
+        <Text className="mt-0.5 text-sm text-slate-500">
+          Member since {formatMonthYear(createdAt)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+interface ProfileStats {
+  streak: number;
+  longestStreak: number;
+  goalsMet: number;
+  avg: number;
+}
+
+/** Roll up the last 30 days into the three headline stats. */
+function computeStats(days: DailySummary[]): ProfileStats {
+  const tracked = days.filter((d) => d.total_intake_ml > 0);
+  const avg = tracked.length
+    ? Math.round(tracked.reduce((s, d) => s + d.total_intake_ml, 0) / tracked.length)
+    : 0;
+  const goalsMet = days.filter((d) => d.goal_met).length;
+  const { current: streak, longest: longestStreak } = computeStreaks(days);
+  return { streak, longestStreak, goalsMet, avg };
+}
+
+function StatStrip({ days, unit }: { days: DailySummary[]; unit: UnitPreference }) {
+  const stats = useMemo(() => computeStats(days), [days]);
+  return (
+    <Card className="mt-5 flex-row items-center px-2 py-4">
+      <HeroStat
+        icon="flame"
+        value={stats.streak === 1 ? '1 day' : `${stats.streak} days`}
+        label="Streak"
+        sub={stats.longestStreak > 0 ? `Best ${stats.longestStreak}` : undefined}
+        accent={stats.streak > 0}
+      />
+      <StatDivider />
+      <HeroStat icon="checkmark-done" value={`${stats.goalsMet}`} label="Goals met" />
+      <StatDivider />
+      <HeroStat
+        icon="water"
+        value={stats.avg > 0 ? formatVolume(stats.avg, unit) : '—'}
+        label="Daily avg"
+      />
+    </Card>
+  );
+}
+
+function HeroStat({
+  icon,
+  value,
+  label,
+  sub,
+  accent = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  value: string;
+  label: string;
+  sub?: string;
+  accent?: boolean;
+}) {
+  return (
+    <View className="flex-1 items-center">
+      <Ionicons name={icon} size={18} color={accent ? colors.aqua[500] : colors.hydro[400]} />
+      <Text className="mt-1.5 text-base font-bold text-hydro-950">{value}</Text>
+      <Text className="mt-0.5 text-[11px] font-medium text-slate-400">{label}</Text>
+      {sub && <Text className="mt-0.5 text-[10px] font-medium text-slate-300">{sub}</Text>}
+    </View>
+  );
+}
+
+function StatDivider() {
+  return <View className="h-9 w-px bg-slate-200/70" />;
+}
+
+/* ------------------------------- primitives ------------------------------- */
 
 /** "8 AM" / "8 PM" / "Noon" / "Midnight" for the reminder window. */
 function formatHour(hour24: number): string {
@@ -329,6 +523,84 @@ function formatHour(hour24: number): string {
   const period = hour24 < 12 ? 'AM' : 'PM';
   const h = hour24 % 12 === 0 ? 12 : hour24 % 12;
   return `${h} ${period}`;
+}
+
+/** "June 2026" for the member-since line. */
+function formatMonthYear(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+const cardShadow = {
+  shadowColor: '#0C4A6E',
+  shadowOpacity: 0.08,
+  shadowRadius: 12,
+  shadowOffset: { width: 0, height: 6 },
+} as const;
+
+function Card({
+  children,
+  className = '',
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <View
+      className={`overflow-hidden rounded-3xl border border-white/80 bg-white/70 ${className}`}
+      style={cardShadow}
+    >
+      {children}
+    </View>
+  );
+}
+
+function Divider() {
+  return <View className="mx-4 h-px bg-slate-100" />;
+}
+
+function Row({
+  icon,
+  label,
+  onPress,
+  loading = false,
+  destructive = false,
+  chevron = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  loading?: boolean;
+  destructive?: boolean;
+  chevron?: boolean;
+}) {
+  const tint = destructive ? '#EF4444' : colors.slate[500];
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={loading}
+      className={`flex-row items-center gap-3 px-4 py-3.5 ${
+        destructive ? 'active:bg-red-50' : 'active:bg-slate-50'
+      }`}
+    >
+      {loading ? (
+        <ActivityIndicator color={tint} />
+      ) : (
+        <Ionicons name={icon} size={18} color={tint} />
+      )}
+      <Text
+        className={`flex-1 text-base font-medium ${
+          destructive ? 'text-red-500' : 'text-slate-700'
+        }`}
+      >
+        {label}
+      </Text>
+      {chevron && (
+        <Ionicons name="chevron-forward" size={16} color={colors.slate[400]} />
+      )}
+    </Pressable>
+  );
 }
 
 function Stepper({
@@ -347,7 +619,7 @@ function Stepper({
   canInc: boolean;
 }) {
   return (
-    <View className="flex-row items-center justify-between rounded-2xl border border-slate-100 px-4 py-2.5">
+    <View className="flex-row items-center justify-between py-1.5">
       <Text className="text-base font-medium text-slate-600">{label}</Text>
       <View className="flex-row items-center gap-4">
         <StepButton icon="remove" onPress={onDec} disabled={!canDec} />
@@ -378,15 +650,15 @@ function StepButton({
         disabled ? 'bg-slate-100' : 'bg-hydro-50 active:bg-hydro-100'
       }`}
     >
-      <Ionicons name={icon} size={18} color={disabled ? '#CBD5E1' : '#0284C7'} />
+      <Ionicons name={icon} size={18} color={disabled ? '#CBD5E1' : colors.hydro[600]} />
     </Pressable>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <View className="mt-8">
-      <Text className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+    <View className="mt-7">
+      <Text className="mb-2.5 ml-1 text-sm font-semibold uppercase tracking-wide text-slate-400">
         {title}
       </Text>
       {children}

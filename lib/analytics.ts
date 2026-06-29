@@ -20,6 +20,7 @@ export interface AnalyticsEvents {
     volume_ml: number;
   };
   goal_met: { goal_ml: number; total_ml: number };
+  streak_milestone: { days: number };
   reminders_configured: { enabled: boolean; interval_hours: number };
   data_cleared: Record<string, never>;
   account_deleted: Record<string, never>;
