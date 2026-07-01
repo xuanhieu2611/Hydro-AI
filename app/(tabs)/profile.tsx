@@ -26,7 +26,7 @@ import {
   useAuthIdentity,
 } from '@/lib/query/hooks';
 import { formatVolume } from '@/lib/units';
-import { syncReminders, cancelAllReminders } from '@/lib/notifications';
+import { syncReminders, syncStreakDanger, cancelAllReminders } from '@/lib/notifications';
 import { signOut } from '@/lib/auth';
 import { analytics } from '@/lib/analytics';
 import { tapSelection } from '@/lib/haptics';
@@ -80,9 +80,19 @@ export default function ProfileScreen() {
   const patchReminders = (patch: Partial<Profile>) => {
     if (!profile.data) return;
     const next = { ...profile.data, ...patch };
+    // Day-state snapshot so the freshly-scheduled copy is streak/progress-aware
+    // (history is most-recent-first, so [0] is today).
+    const days = history.data ?? [];
+    const today = days[0];
+    const state = {
+      streak: computeStreaks(days).current,
+      remaining_ml: today ? Math.max(0, today.goal_ml - today.total_intake_ml) : undefined,
+      goal_ml: today?.goal_ml,
+    };
     updateProfile.mutate(patch, {
       onSuccess: () => {
-        syncReminders(next);
+        syncReminders(next, state);
+        syncStreakDanger(next, state);
         if ('reminders_enabled' in patch || 'reminder_interval_hours' in patch) {
           analytics.track('reminders_configured', {
             enabled: next.reminders_enabled,

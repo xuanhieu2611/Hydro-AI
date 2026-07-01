@@ -1,17 +1,26 @@
 import '../global.css';
 
 import { useEffect, useRef } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, AppState } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 
 import { queryClient } from '@/lib/query/client';
-import { useFinalizeOnboarding, useProfile, useSession } from '@/lib/query/hooks';
+import {
+  notifStateFromCache,
+  useFinalizeOnboarding,
+  useProfile,
+  useSession,
+} from '@/lib/query/hooks';
 import { useAppFonts } from '@/lib/fonts';
-import { configureNotificationHandler, syncReminders } from '@/lib/notifications';
+import {
+  configureNotificationHandler,
+  syncReminders,
+  syncStreakDanger,
+} from '@/lib/notifications';
 import { configureGoogleSignin } from '@/lib/auth';
 import { analytics } from '@/lib/analytics';
 
@@ -49,6 +58,7 @@ function RootNavigator() {
   const session = useSession();
   const profile = useProfile();
   const fontsLoaded = useAppFonts();
+  const qc = useQueryClient();
 
   // One app_opened event per cold start, once the profile resolves.
   const trackedOpen = useRef(false);
@@ -59,11 +69,16 @@ function RootNavigator() {
     }
   }, [profile.data]);
 
-  // Keep the OS reminder schedule reconciled with the saved settings. Re-runs
-  // when any reminder field changes (idempotent; clears when disabled).
+  // Keep the OS reminder schedule + streak-saver reconciled with the saved
+  // settings and today's state. Re-runs when any reminder field changes
+  // (idempotent; clears when disabled). The day-state snapshot personalizes the
+  // frozen copy; it's refreshed again on every app foreground below.
   const p = profile.data;
   useEffect(() => {
-    if (p?.onboarding_completed) syncReminders(p);
+    if (!p?.onboarding_completed) return;
+    const state = notifStateFromCache(qc);
+    syncReminders(p, state);
+    syncStreakDanger(p, state);
   }, [
     p?.onboarding_completed,
     p?.reminders_enabled,
@@ -71,6 +86,19 @@ function RootNavigator() {
     p?.reminder_window_start_hour,
     p?.reminder_window_end_hour,
   ]);
+
+  // Re-sync on every foreground so frozen local copy reflects recent progress —
+  // e.g. the streak-saver goes quiet once today's goal is met. Cheap and
+  // idempotent (cancel + reschedule our own tags only).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active' || !p?.onboarding_completed) return;
+      const state = notifStateFromCache(qc);
+      syncReminders(p, state);
+      syncStreakDanger(p, state);
+    });
+    return () => sub.remove();
+  }, [p, qc]);
 
   const authenticated = session === 'authenticated';
   const onboarded = !!profile.data?.onboarding_completed;

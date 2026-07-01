@@ -51,7 +51,7 @@ export default function HomeScreen() {
     if (prev != null && streak > prev) {
       const milestone = isStreakMilestone(streak);
       setCelebration({ streak, milestone });
-      celebrateGoalMet();
+      celebrateGoalMet(profile.data ?? null, { streak, remaining_ml: 0, goal_ml: goal });
       analytics.track('goal_met', { goal_ml: goal, total_ml: intake });
       if (milestone) analytics.track('streak_milestone', { days: streak });
       const t = setTimeout(() => setCelebration(null), milestone ? 4500 : 3500);

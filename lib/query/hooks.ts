@@ -3,17 +3,20 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryClient,
 } from '@tanstack/react-query';
 
 import { analyzer, dataSource, repository } from '../data';
 import type {
   AnalysisResult,
+  DailySummary,
   LogEntry,
   NewLogEntry,
   Profile,
 } from '../data/types';
 import { supabase } from '../supabase/client';
-import { bumpInactivityNudge } from '../notifications';
+import { bumpInactivityNudge, syncStreakDanger, type NotifState } from '../notifications';
+import { computeStreaks } from '../streak';
 import { todayKey } from '../date';
 import { MOCK_USER_ID } from '../data/mock/seed';
 import { clearDraft, loadDraft } from '../onboarding/draft';
@@ -187,6 +190,23 @@ export function useFinalizeOnboarding(enabled: boolean): boolean {
  * Log a drink with an optimistic insert so the dashboard reacts instantly
  * (CLAUDE.md: logging uses optimistic updates). Logs are always "now" → today.
  */
+/**
+ * Best-effort snapshot of today's day-state for notification copy, read from the
+ * query cache (no fetch). Streak comes from the 90-day history and remaining ml
+ * from today's summary; both may be absent on a cold cache, in which case the
+ * copy engine falls back to its generic lines. Refreshed wherever we (re)schedule
+ * notifications — profile change, app foreground, and after each log.
+ */
+export function notifStateFromCache(qc: QueryClient): NotifState {
+  const summary = qc.getQueryData<DailySummary>(queryKeys.dailySummary(todayKey()));
+  const history = qc.getQueryData<DailySummary[]>(queryKeys.history(90));
+  return {
+    streak: history ? computeStreaks(history).current : undefined,
+    remaining_ml: summary ? Math.max(0, summary.goal_ml - summary.total_intake_ml) : undefined,
+    goal_ml: summary?.goal_ml,
+  };
+}
+
 export function useAddLog() {
   const qc = useQueryClient();
   const date = todayKey();
@@ -219,9 +239,16 @@ export function useAddLog() {
       if (ctx?.previous) qc.setQueryData(key, ctx.previous);
     },
     onSuccess: () => {
-      // Logging activity pushes the "haven't logged in a while" nudge back out.
+      // Logging activity pushes the "haven't logged in a while" nudge back out
+      // and refreshes the streak-saver (a log that crosses the goal cancels it).
+      // State is read pre-invalidation, so it lags this log by one entry; the
+      // foreground re-sync reconciles it — good enough for frozen local copy.
       const profile = qc.getQueryData<Profile>(queryKeys.profile);
-      if (profile) bumpInactivityNudge(profile);
+      if (profile) {
+        const state = notifStateFromCache(qc);
+        bumpInactivityNudge(profile, state);
+        syncStreakDanger(profile, state);
+      }
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: key });

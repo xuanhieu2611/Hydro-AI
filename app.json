@@ -54,7 +54,16 @@
           "photosPermission": "Hydro AI lets you add a drink from your camera roll if you forgot to log it in the moment."
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/sounds/drop.wav",
+            "./assets/sounds/nag.wav",
+            "./assets/sounds/uongnuocdi.wav"
+          ]
+        }
+      ],
       "expo-font",
       "expo-asset",
       "expo-apple-authentication",
