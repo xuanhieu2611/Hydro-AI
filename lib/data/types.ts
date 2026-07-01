@@ -33,6 +33,8 @@ export type ContainerType =
 export interface Profile {
   id: string;
   display_name: string | null;
+  /** Avatar photo URL, seeded from the auth provider (Google). Null for Apple. */
+  avatar_url: string | null;
   daily_goal_ml: number;
   unit_preference: UnitPreference;
   /** First-run flag — false until onboarding is finished (gates the app). */

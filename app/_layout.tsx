@@ -9,13 +9,16 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 
 import { queryClient } from '@/lib/query/client';
-import { useProfile } from '@/lib/query/hooks';
+import { useFinalizeOnboarding, useProfile, useSession } from '@/lib/query/hooks';
 import { useAppFonts } from '@/lib/fonts';
 import { configureNotificationHandler, syncReminders } from '@/lib/notifications';
+import { configureGoogleSignin } from '@/lib/auth';
 import { analytics } from '@/lib/analytics';
 
 // Foreground handler must be registered before any notification can present.
 configureNotificationHandler();
+// One-time native Google sign-in config (no-op in mock mode at runtime).
+configureGoogleSignin();
 
 export default function RootLayout() {
   return (
@@ -31,13 +34,19 @@ export default function RootLayout() {
 }
 
 /**
- * Onboarding gate: the profile decides which screen group is reachable.
- * `Stack.Protected` swaps the available routes when `onboarding_completed`
- * flips, so finishing onboarding auto-lands the app on the tabs (no manual
- * redirect needed). We hold a splash until the profile resolves to avoid a
- * flash of the wrong screen.
+ * Onboarding-first gate. The app is reachable only once `onboarding_completed`
+ * is true; everything before that (name → goal → units → reminders → sign-in)
+ * lives in the `onboarding` route, which is therefore shown whenever the user
+ * isn't fully onboarded — signed out *or* signed-in-but-not-onboarded. Sign-in
+ * is the last onboarding step (Apple/Google required); on success the buffered
+ * answers are flushed by `useFinalizeOnboarding`, which flips the gate to the
+ * tabs. `Stack.Protected` swaps the reachable routes so no manual redirects are
+ * needed, and a splash holds while booting or finalizing to avoid flashing the
+ * wrong screen. In mock mode `useSession` is always authenticated, so the
+ * sign-in step is skipped (onboarding still shows until completed).
  */
 function RootNavigator() {
+  const session = useSession();
   const profile = useProfile();
   const fontsLoaded = useAppFonts();
 
@@ -63,7 +72,21 @@ function RootNavigator() {
     p?.reminder_window_end_hour,
   ]);
 
-  if (profile.isLoading || !profile.data || !fontsLoaded) {
+  const authenticated = session === 'authenticated';
+  const onboarded = !!profile.data?.onboarding_completed;
+  // After sign-in, flush the buffered onboarding answers into the profile.
+  const finalizing = useFinalizeOnboarding(
+    authenticated && !!profile.data && !onboarded,
+  );
+
+  // Hold the splash while fonts/session load, (once signed in) while the profile
+  // resolves, and while finalizing — so we never flash the wrong screen.
+  const booting =
+    !fontsLoaded ||
+    session === 'loading' ||
+    (authenticated && (profile.isLoading || !profile.data));
+
+  if (booting || finalizing) {
     return (
       <View className="flex-1 items-center justify-center bg-white">
         <ActivityIndicator color="#0EA5E9" />
@@ -71,11 +94,9 @@ function RootNavigator() {
     );
   }
 
-  const onboarded = profile.data.onboarding_completed;
-
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={onboarded}>
+      <Stack.Protected guard={authenticated && onboarded}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="camera"
@@ -90,7 +111,7 @@ function RootNavigator() {
           options={{ presentation: 'modal', title: 'Dev / Data layer check' }}
         />
       </Stack.Protected>
-      <Stack.Protected guard={!onboarded}>
+      <Stack.Protected guard={!(authenticated && onboarded)}>
         <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
       </Stack.Protected>
     </Stack>

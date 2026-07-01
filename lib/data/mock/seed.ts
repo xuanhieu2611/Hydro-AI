@@ -13,6 +13,7 @@ export const MOCK_USER_ID = 'mock-user-0001';
 export const seedProfile: Profile = {
   id: MOCK_USER_ID,
   display_name: 'Sam',
+  avatar_url: null,
   daily_goal_ml: 2000,
   unit_preference: 'ml',
   // Seeded false so the first-run onboarding flow is reachable. With the mock

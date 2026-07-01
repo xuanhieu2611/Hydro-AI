@@ -4,7 +4,7 @@ import { FunctionsHttpError } from '@supabase/supabase-js';
 import type { Analyzer } from '../analyzer';
 import type { AnalysisResult } from '../types';
 import { RateLimitError } from '../errors';
-import { supabase, ensureSession } from '../../supabase/client';
+import { supabase, currentUserId } from '../../supabase/client';
 
 /**
  * Real AI boundary: POSTs a downscaled image to the `analyze-image` Edge
@@ -14,7 +14,7 @@ import { supabase, ensureSession } from '../../supabase/client';
  */
 export class EdgeFunctionAnalyzer implements Analyzer {
   async analyzeImage(uri: string): Promise<AnalysisResult> {
-    await ensureSession(); // functions.invoke attaches the user's JWT
+    await currentUserId(); // require a session; functions.invoke attaches its JWT
 
     const base64 = await FileSystem.readAsStringAsync(uri, {
       encoding: FileSystem.EncodingType.Base64,

@@ -25,8 +25,10 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { VolumeAdjuster } from '@/components/VolumeAdjuster';
 import { LiquidGauge } from '@/components/LiquidGauge';
+import { SignInButtons } from '@/components/SignInButtons';
 import { colors, gradients } from '@/lib/theme';
-import { useUpdateProfile } from '@/lib/query/hooks';
+import { useSession, useUpdateProfile } from '@/lib/query/hooks';
+import { saveDraft, type OnboardingDraft } from '@/lib/onboarding/draft';
 import { analytics } from '@/lib/analytics';
 import { tapSelection } from '@/lib/haptics';
 import {
@@ -45,15 +47,20 @@ const STEP_COUNT = 5;
 const DEFAULT_GOAL_ML = 2000;
 
 /**
- * First-run onboarding (PRD §4.5). Collects a name, a daily goal + unit
- * preference and an optional notifications opt-in, then marks
- * `onboarding_completed` so the gate stops redirecting here. Each screen is a
- * step in local state — no nested routes needed, and Skip jumps straight to the
- * finish for fast iteration.
+ * First-run onboarding (PRD §4.5), onboarding-first: collect a name, daily goal
+ * + unit preference and a notifications opt-in, then sign in as the final step.
+ * Each screen is a step in local state — no nested routes needed.
+ *
+ * Sign-in is required to finish. When already authenticated (mock mode, or a
+ * returning user who never onboarded) the last step is a one-tap "Get started"
+ * that writes the profile directly. Otherwise it shows Apple/Google: the answers
+ * are buffered to a draft first, and the root `useFinalizeOnboarding` flushes
+ * them once the session flips.
  */
 export default function Onboarding() {
   const router = useRouter();
   const updateProfile = useUpdateProfile();
+  const authenticated = useSession() === 'authenticated';
 
   const [step, setStep] = useState<Step>(0);
   // Direction drives the slide transition (forward vs back).
@@ -73,29 +80,45 @@ export default function Onboarding() {
     setDir(-1);
     setStep((s) => Math.max(0, s - 1) as Step);
   };
+  // Skip can't finish without an account — jump to the sign-in step instead.
+  const skip = () => {
+    analytics.track('onboarding_skipped', {});
+    tapSelection();
+    setDir(1);
+    setStep(LAST_STEP);
+  };
 
-  /** Persist the collected settings, flip the gate, then leave onboarding. */
-  const finish = async (thenCamera: boolean) => {
-    // Skip = leaving before the final step (settings stay at their defaults).
-    const skipped = step < LAST_STEP;
+  const buildDraft = (): OnboardingDraft => {
     const trimmedName = name.trim();
-    await updateProfile.mutateAsync({
+    return {
       display_name: trimmedName.length ? trimmedName : null,
       daily_goal_ml: goalMl,
       unit_preference: unit,
       reminders_enabled: notify,
+    };
+  };
+
+  /**
+   * Already-authenticated finish (mock / returning user): write the profile
+   * directly and flip the gate. The unauthenticated path instead persists the
+   * draft (`onBeforeSignIn`) and lets the root finalize flush it after sign-in.
+   */
+  const finishAuthenticated = async () => {
+    const draft = buildDraft();
+    const patch = {
+      daily_goal_ml: draft.daily_goal_ml,
+      unit_preference: draft.unit_preference,
+      reminders_enabled: draft.reminders_enabled,
       onboarding_completed: true,
+      ...(draft.display_name ? { display_name: draft.display_name } : {}),
+    };
+    await updateProfile.mutateAsync(patch);
+    analytics.track('onboarding_completed', {
+      goal_ml: goalMl,
+      unit,
+      reminders_enabled: notify,
     });
-    if (skipped) {
-      analytics.track('onboarding_skipped', {});
-    } else {
-      analytics.track('onboarding_completed', {
-        goal_ml: goalMl,
-        unit,
-        reminders_enabled: notify,
-      });
-    }
-    router.replace(thenCamera ? '/camera' : '/(tabs)');
+    router.replace('/(tabs)');
   };
 
   const Entering = dir === 1 ? SlideInRight : SlideInLeft;
@@ -115,11 +138,7 @@ export default function Onboarding() {
         <View className="flex-row items-center gap-4 px-6 pt-2">
           <ProgressBar step={step} />
           {step < LAST_STEP ? (
-            <Pressable
-              onPress={() => finish(false)}
-              disabled={updateProfile.isPending}
-              hitSlop={8}
-            >
+            <Pressable onPress={skip} hitSlop={8}>
               <Text className="text-sm font-medium text-slate-400">Skip</Text>
             </Pressable>
           ) : (
@@ -138,29 +157,23 @@ export default function Onboarding() {
           )}
           {step === 2 && <UnitStep unit={unit} onChange={setUnit} />}
           {step === 3 && <NotificationsStep enabled={notify} onChange={setNotify} />}
-          {step === 4 && <FirstLog name={name} />}
+          {step === 4 && <SignInStep name={name} />}
         </Animated.View>
 
         {/* Footer actions */}
         <View className="gap-2 px-6 pb-8">
           {step === LAST_STEP ? (
-            <>
+            authenticated ? (
+              // Mock mode / already signed in: no sign-in needed, one tap to finish.
               <PrimaryButton
-                label="Take a photo of a drink"
-                icon="camera"
+                label="Get started"
                 loading={updateProfile.isPending}
-                onPress={() => finish(true)}
+                onPress={finishAuthenticated}
               />
-              <Pressable
-                onPress={() => finish(false)}
-                disabled={updateProfile.isPending}
-                className="py-3"
-              >
-                <Text className="text-center text-sm font-medium text-slate-500">
-                  Maybe later — go to home
-                </Text>
-              </Pressable>
-            </>
+            ) : (
+              // Buffer answers, then sign in — the root finalize flushes them.
+              <SignInButtons onBeforeSignIn={() => saveDraft(buildDraft())} />
+            )
           ) : (
             <View className="flex-row items-center gap-3">
               {step > 0 && (
@@ -475,19 +488,23 @@ function NotificationsStep({
   );
 }
 
-function FirstLog({ name }: { name: string }) {
+function SignInStep({ name }: { name: string }) {
   const greeting = name.trim().length ? `You're all set, ${name.trim()}!` : "You're all set!";
   return (
     <StepBody>
       <View className="flex-1 items-center justify-center">
-        <View className="h-24 w-24 items-center justify-center rounded-full bg-hydro-50">
-          <Text className="text-6xl">📸</Text>
-        </View>
-        <Text className="mt-6 text-center text-3xl font-bold text-slate-900">
+        <LiquidGauge progress={0.68} size={148}>
+          <Text className="text-5xl">💧</Text>
+        </LiquidGauge>
+        <Text className="mt-8 text-center text-3xl font-bold text-slate-900">
           {greeting}
         </Text>
         <Text className="mt-3 text-center text-base leading-6 text-slate-500">
-          Try it now — take a photo of a drink near you and watch Hydro AI log it.
+          Create an account to save your progress and start tracking — it only
+          takes a second.
+        </Text>
+        <Text className="mt-6 text-center text-xs leading-5 text-slate-400">
+          We only store your hydration data — never your photos.
         </Text>
       </View>
     </StepBody>

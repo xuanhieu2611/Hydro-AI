@@ -1,27 +1,102 @@
+import { useEffect, useState } from 'react';
 import {
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
 
-import { analyzer, repository } from '../data';
+import { analyzer, dataSource, repository } from '../data';
 import type {
   AnalysisResult,
   LogEntry,
   NewLogEntry,
   Profile,
 } from '../data/types';
+import { supabase } from '../supabase/client';
 import { bumpInactivityNudge } from '../notifications';
 import { todayKey } from '../date';
 import { MOCK_USER_ID } from '../data/mock/seed';
+import { clearDraft, loadDraft } from '../onboarding/draft';
 import { queryKeys } from './client';
+
+/* ----------------------------------- auth ----------------------------------- */
+
+export type SessionStatus = 'loading' | 'authenticated' | 'unauthenticated';
+
+/**
+ * Tracks the Supabase auth session that gates the whole app (sign-in is
+ * required — the last onboarding step, `components/SignInButtons`). Seeds from
+ * the persisted session, then
+ * follows `onAuthStateChange` so sign-in/out re-routes the nav gate instantly.
+ *
+ * Mock mode has no real auth, so it reports `authenticated` immediately and the
+ * gate is bypassed (CLAUDE.md: mock stays fully working for fast UI iteration).
+ */
+export function useSession(): SessionStatus {
+  const [status, setStatus] = useState<SessionStatus>(
+    dataSource === 'mock' ? 'authenticated' : 'loading',
+  );
+
+  useEffect(() => {
+    if (dataSource === 'mock') return;
+
+    supabase.auth.getSession().then(({ data }) => {
+      setStatus(data.session ? 'authenticated' : 'unauthenticated');
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setStatus(session ? 'authenticated' : 'unauthenticated');
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  return status;
+}
+
+export interface AuthIdentity {
+  email: string | null;
+  /** The provider that minted the session, e.g. 'apple' | 'google'. */
+  provider: string | null;
+}
+
+/**
+ * The signed-in user's email + provider for the Profile "Account" section.
+ * Returns null in mock mode (no real auth) and while unauthenticated.
+ */
+export function useAuthIdentity(): AuthIdentity | null {
+  const session = useSession();
+  const [identity, setIdentity] = useState<AuthIdentity | null>(null);
+
+  useEffect(() => {
+    if (dataSource === 'mock' || session !== 'authenticated') {
+      setIdentity(null);
+      return;
+    }
+    supabase.auth.getUser().then(({ data }) => {
+      const u = data.user;
+      if (u) {
+        setIdentity({
+          email: u.email ?? null,
+          provider: (u.app_metadata?.provider as string | undefined) ?? null,
+        });
+      }
+    });
+  }, [session]);
+
+  return identity;
+}
 
 /* ----------------------------------- reads ---------------------------------- */
 
 export function useProfile() {
+  // In supabase mode `getProfile()` requires a session, so only fetch once
+  // signed in; the nav gate ensures this hook's consumers mount post-auth, but
+  // `enabled` guards the brief unauthenticated window too.
+  const session = useSession();
   return useQuery({
     queryKey: queryKeys.profile,
     queryFn: () => repository.getProfile(),
+    enabled: session === 'authenticated',
   });
 }
 
@@ -59,6 +134,53 @@ export function useUpdateProfile() {
       qc.invalidateQueries({ queryKey: ['history'] });
     },
   });
+}
+
+/**
+ * Flush the buffered onboarding answers (see `lib/onboarding/draft`) into the
+ * profile once a session exists. The app is onboarding-first: answers are
+ * collected before sign-in, then written here after it. This lives at the root
+ * (not in the onboarding screen) because the moment the session flips, the
+ * profile-load splash unmounts onboarding — so an in-component flush would be
+ * cut short. `enabled` should be `authenticated && profile loaded && !onboarded`.
+ * Returns `finalizing` so the gate can hold the splash during the write.
+ */
+export function useFinalizeOnboarding(enabled: boolean): boolean {
+  const updateProfile = useUpdateProfile();
+  const [finalizing, setFinalizing] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    (async () => {
+      const draft = await loadDraft();
+      // No draft → nothing to flush; the onboarding gate stays up so the user
+      // can complete it (e.g. an account that signed in but never finished).
+      if (!draft) return;
+      setFinalizing(true);
+      try {
+        // Only override display_name when the user actually typed one — otherwise
+        // keep whatever the provider seeded (`seedIdentity`).
+        const patch: Partial<Profile> = {
+          daily_goal_ml: draft.daily_goal_ml,
+          unit_preference: draft.unit_preference,
+          reminders_enabled: draft.reminders_enabled,
+          onboarding_completed: true,
+        };
+        if (draft.display_name) patch.display_name = draft.display_name;
+        await updateProfile.mutateAsync(patch);
+        await clearDraft();
+      } finally {
+        if (!cancelled) setFinalizing(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled]);
+
+  return finalizing;
 }
 
 /**

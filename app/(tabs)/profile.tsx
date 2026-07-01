@@ -8,6 +8,7 @@ import {
   Alert,
   ScrollView,
   TextInput,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,9 +23,11 @@ import {
   useUpdateProfile,
   useClearAllData,
   useDeleteAccount,
+  useAuthIdentity,
 } from '@/lib/query/hooks';
 import { formatVolume } from '@/lib/units';
 import { syncReminders, cancelAllReminders } from '@/lib/notifications';
+import { signOut } from '@/lib/auth';
 import { analytics } from '@/lib/analytics';
 import { tapSelection } from '@/lib/haptics';
 import { computeStreaks } from '@/lib/streak';
@@ -36,6 +39,7 @@ export default function ProfileScreen() {
   const updateProfile = useUpdateProfile();
   const clearData = useClearAllData();
   const deleteAccount = useDeleteAccount();
+  const identity = useAuthIdentity();
 
   const unit = profile.data?.unit_preference ?? 'ml';
 
@@ -107,6 +111,21 @@ export default function ProfileScreen() {
     );
   };
 
+  const confirmSignOut = () => {
+    Alert.alert('Sign out?', 'You can sign back in anytime with Apple or Google.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        // The auth-state listener routes back to the sign-in gate; no nav here.
+        onPress: () => {
+          cancelAllReminders();
+          signOut();
+        },
+      },
+    ]);
+  };
+
   const confirmDelete = () => {
     Alert.alert(
       'Delete account?',
@@ -155,6 +174,7 @@ export default function ProfileScreen() {
         <Animated.View entering={FadeInDown.springify().damping(18)}>
           <IdentityHeader
             name={p.display_name}
+            avatarUrl={p.avatar_url}
             createdAt={p.created_at}
             onSaveName={saveName}
           />
@@ -322,6 +342,35 @@ export default function ProfileScreen() {
           </Section>
         </Animated.View>
 
+        {/* Account — only meaningful with the real backend (mock has no auth) */}
+        {identity && (
+          <Animated.View entering={FadeInDown.springify().damping(18).delay(330)}>
+            <Section title="Account">
+              <Card>
+                <View className="flex-row items-center gap-3 px-4 py-3.5">
+                  <Ionicons
+                    name={providerIcon(identity.provider)}
+                    size={18}
+                    color={colors.slate[500]}
+                  />
+                  <View className="flex-1">
+                    <Text className="text-base font-medium text-slate-700">
+                      {identity.email ?? 'Signed in'}
+                    </Text>
+                    {identity.provider && (
+                      <Text className="text-xs text-slate-400">
+                        via {capitalize(identity.provider)}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <Divider />
+                <Row icon="log-out-outline" label="Sign out" onPress={confirmSignOut} />
+              </Card>
+            </Section>
+          </Animated.View>
+        )}
+
         {/* Data & account (GDPR/CCPA) */}
         <Animated.View entering={FadeInDown.springify().damping(18).delay(360)}>
           <Section title="Data & account">
@@ -374,10 +423,12 @@ export default function ProfileScreen() {
 
 function IdentityHeader({
   name,
+  avatarUrl,
   createdAt,
   onSaveName,
 }: {
   name: string | null;
+  avatarUrl: string | null;
   createdAt: string;
   onSaveName: (name: string) => void;
 }) {
@@ -397,17 +448,24 @@ function IdentityHeader({
 
   return (
     <View className="mt-5 flex-row items-center gap-4">
-      <LinearGradient
-        colors={gradients.hero}
-        style={{ width: 64, height: 64, borderRadius: 32 }}
-        className="items-center justify-center"
-      >
-        {initial ? (
-          <Text className="text-2xl font-bold text-white">{initial}</Text>
-        ) : (
-          <Text className="text-3xl">💧</Text>
-        )}
-      </LinearGradient>
+      {avatarUrl ? (
+        <Image
+          source={{ uri: avatarUrl }}
+          style={{ width: 64, height: 64, borderRadius: 32 }}
+        />
+      ) : (
+        <LinearGradient
+          colors={gradients.hero}
+          style={{ width: 64, height: 64, borderRadius: 32 }}
+          className="items-center justify-center"
+        >
+          {initial ? (
+            <Text className="text-2xl font-bold text-white">{initial}</Text>
+          ) : (
+            <Text className="text-3xl">💧</Text>
+          )}
+        </LinearGradient>
+      )}
 
       <View className="flex-1">
         {editing ? (
@@ -523,6 +581,17 @@ function formatHour(hour24: number): string {
   const period = hour24 < 12 ? 'AM' : 'PM';
   const h = hour24 % 12 === 0 ? 12 : hour24 % 12;
   return `${h} ${period}`;
+}
+
+/** Icon for the signed-in provider (falls back to a generic person glyph). */
+function providerIcon(provider: string | null): keyof typeof Ionicons.glyphMap {
+  if (provider === 'apple') return 'logo-apple';
+  if (provider === 'google') return 'logo-google';
+  return 'person-circle-outline';
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** "June 2026" for the member-since line. */

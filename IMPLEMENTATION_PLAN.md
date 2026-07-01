@@ -99,7 +99,7 @@ interface Analyzer {            // the AI boundary
 
 **Goal:** Make it a real first-run product. (US-05, US-06, US-07)
 
-- [x] Onboarding flow: Welcome → Set Goal (recommend-from-weight/activity *or* custom) → unit preference → notifications opt-in → first-log CTA. *(`app/onboarding.tsx` — single screen, stepped local state; gated in `app/_layout.tsx` via `Stack.Protected` on a new `Profile.onboarding_completed` flag. Goal recommendation in `lib/hydration.ts` (~35 ml/kg + activity bonus). Notifications step calls `requestPermissionsAsync` now; scheduling is Phase 4. Skip + "Replay onboarding" (Profile) for fast iteration.)*
+- [x] Onboarding flow: Welcome → Set Goal (recommend-from-weight/activity *or* custom) → unit preference → notifications opt-in → sign-in. *(`app/onboarding.tsx` — single screen, stepped local state; **onboarding-first**, sign-in is the final step; gated in `app/_layout.tsx` via `Stack.Protected` on the `Profile.onboarding_completed` flag. Goal recommendation in `lib/hydration.ts` (~35 ml/kg + activity bonus). Notifications step calls `requestPermissionsAsync` now; scheduling is Phase 4. Skip + "Replay onboarding" (Profile) for fast iteration.)*
 - [x] Custom daily goal + ml/oz unit toggle in Profile (US-07); unit conversion handled at display layer (store canonical ml). *(`app/(tabs)/profile.tsx` — goal stepper + Save, unit segmented control via `useUpdateProfile`.)*
 - [x] **Add from camera roll** via `expo-image-picker` → same `analyze-image` path (US-05). *(Gallery button on the camera modal; shares the `analyzeUri` downscale→analyze flow.)*
 - [x] **Manual log** (type + volume, no photo) (US-06). *(`app/manual-log.tsx` modal + `components/BeveragePicker.tsx`; logs via the same optimistic `useAddLog`.)*
@@ -130,14 +130,16 @@ interface Analyzer {            // the AI boundary
 
 ### Supabase setup
 - [x] Create Supabase project; put URL + anon key in env (EAS secrets — never commit). Add `@supabase/supabase-js`. *(Project "HydroAI" `cwxgvpdbaihlulkiuucd`; URL + publishable key in `.env` (now gitignored); deps incl. `@react-native-async-storage/async-storage`, `react-native-url-polyfill`, `expo-file-system`, `base64-arraybuffer`.)*
-- [x] Supabase client singleton with AsyncStorage session persistence. *(`lib/supabase/client.ts` — `detectSessionInUrl:false`; `ensureSession`/`currentUserId`/`resetSession` helpers.)*
-- [x] Anonymous auth on first launch; create a `profiles` row. *(Lazy `signInAnonymously` via `ensureSession`; `profiles` row auto-created by the `handle_new_user` trigger on `auth.users` insert.)* **Prereq: enable Anonymous sign-ins in Supabase → Auth → Sign In / Providers.**
+- [x] Supabase client singleton with AsyncStorage session persistence. *(`lib/supabase/client.ts` — `detectSessionInUrl:false`; `currentUserId`/`resetSession` helpers.)*
+- [x] **Required Apple/Google sign-in** (replaced anonymous auth). *(Native ID-token flow in `lib/auth.ts` → `signInWithIdToken`; **onboarding-first** — sign-in is the last onboarding step (`components/SignInButtons.tsx`), answers buffered in `lib/onboarding/draft.ts` and flushed by `useFinalizeOnboarding` after sign-in; gate in `app/_layout.tsx` shows `onboarding` until `onboarding_completed`. Provider name + Google avatar seeded via `seedIdentity` (`lib/auth.ts`). `useSession`/`useAuthIdentity` in `lib/query/hooks.ts`; Profile "Account" section + Sign out. `profiles` row auto-created by the `handle_new_user` trigger. Mock mode skips the sign-in step.)* **Prereqs: configure Apple/Google providers + Google OAuth client IDs — see `docs/AUTH_SETUP.md`; requires a fresh dev-client build (new native modules).**
+  - [ ] **Follow-up:** admin `delete-account` Edge Function (service-role) to hard-delete the `auth.users` row — `deleteAccount()` currently only wipes logs + signs out (the client can't self-delete its auth user).
 
 ### Schema + security (migrations)
 ```sql
 profiles(
   id uuid pk references auth.users,
   display_name text,
+  avatar_url text,                        -- seeded from Google auth photo; Apple returns none
   daily_goal_ml int default 2000,
   unit_preference text default 'ml',     -- 'ml' | 'oz'
   onboarding_completed boolean default false,

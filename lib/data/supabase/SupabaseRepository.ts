@@ -33,7 +33,7 @@ function dayBounds(dateKey: string): { startISO: string; endISO: string } {
 
 /**
  * Real backend behind the unchanged DataRepository interface (CLAUDE.md: the
- * backend swap changes the provider, not the screens). Auth is anonymous +
+ * backend swap changes the provider, not the screens). Auth is Apple/Google +
  * RLS-scoped, so every query implicitly operates on the current user's rows.
  *
  * Daily summaries are rolled up client-side (mirroring MockRepository) so day
@@ -201,9 +201,10 @@ export class SupabaseRepository implements DataRepository {
     const uid = await currentUserId();
     await this.removeAllThumbnails(uid);
     await supabase.from('log_entries').delete().eq('user_id', uid);
-    // Anonymous users can't self-delete via the client; sign out so the next
-    // session is a fresh anon user with a fresh un-onboarded profile (the
-    // onboarding gate then re-engages, matching the mock's reset behaviour).
+    // The client can't delete its own `auth.users` row (that needs an admin
+    // Edge Function — see IMPLEMENTATION_PLAN follow-up). Sign out instead: the
+    // auth-state listener routes back to the sign-in gate, and signing in again
+    // (or with another provider) starts a fresh, un-onboarded profile.
     await resetSession();
   }
 

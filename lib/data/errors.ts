@@ -24,3 +24,14 @@ export class RateLimitError extends Error {
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
+
+/**
+ * The user dismissed a native sign-in dialog (Apple/Google). Not a failure —
+ * the auth screen swallows it (no error Alert) and just stays put.
+ */
+export class AuthCancelledError extends Error {
+  constructor() {
+    super('Sign-in was cancelled.');
+    this.name = 'AuthCancelledError';
+  }
+}

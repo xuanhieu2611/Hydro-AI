@@ -29,43 +29,25 @@ export const supabase = createClient(url, anonKey, {
 });
 
 /**
- * Lazily ensure an authenticated session. The PRD/onboarding flow signs users
- * in anonymously on first launch (zero friction, camera-first). The DB trigger
- * `handle_new_user` creates their `profiles` row, so once this resolves the
- * rest of the data layer can assume a current user + profile exist.
- *
- * Memoized so concurrent first calls share one sign-in round-trip.
+ * Current user id for the active session. Sign-in is required (Apple/Google,
+ * see `lib/auth.ts`), so the auth gate in `app/_layout.tsx` guarantees a
+ * session exists before any data-layer call runs — and the query layer gates
+ * `useProfile` on the session too. If neither held, this throws rather than
+ * silently creating a user. The DB trigger `handle_new_user` creates the
+ * caller's `profiles` row at sign-up, so callers can assume it exists.
  */
-let sessionPromise: Promise<void> | null = null;
-
-export function ensureSession(): Promise<void> {
-  if (!sessionPromise) {
-    sessionPromise = (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session) {
-        const { error } = await supabase.auth.signInAnonymously();
-        if (error) throw error;
-      }
-    })();
-  }
-  return sessionPromise;
-}
-
-/** Current user id (after ensuring a session). */
 export async function currentUserId(): Promise<string> {
-  await ensureSession();
   const { data, error } = await supabase.auth.getUser();
   if (error) throw error;
-  if (!data.user) throw new Error('No authenticated user after sign-in.');
+  if (!data.user) throw new Error('Not signed in.');
   return data.user.id;
 }
 
 /**
- * Sign out and forget the cached session. Next `ensureSession()` mints a fresh
- * anonymous user (with a fresh, un-onboarded profile via the DB trigger) — used
- * by account deletion to reset to first-run state.
+ * Sign out of the current session. Used by account deletion and the Profile
+ * "Sign out" action; the auth-state listener then routes the app back to the
+ * sign-in gate.
  */
 export async function resetSession(): Promise<void> {
   await supabase.auth.signOut();
-  sessionPromise = null;
 }

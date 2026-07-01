@@ -12,7 +12,7 @@ Current status: planning → Phase 0 scaffolding. Most of the structure below is
 - **Backend:** Supabase — Postgres, Auth, Storage, Edge Functions (Deno). No separate API server.
 - **AI:** Claude Vision, called **only** from a Supabase Edge Function (`analyze-image`). Never call the AI API directly from the app.
 - **Data layer:** TanStack Query + `@supabase/supabase-js`.
-- **Auth:** Supabase anonymous sign-in on first launch; upgrade to email/Apple/Google later.
+- **Auth:** Supabase Sign in with **Apple / Google** is **required** to use the app. Flow is **onboarding-first**: the user goes through onboarding (name → goal → units → reminders) and signs in as the **last step**. Answers are buffered locally (`lib/onboarding/draft.ts`) and flushed to the profile after sign-in by `useFinalizeOnboarding` (root-level, since the onboarding screen unmounts on the post-sign-in splash). The gate in `app/_layout.tsx` shows `onboarding` until `onboarding_completed`, then the tabs. Sign-in buttons live in `components/SignInButtons.tsx`. Native ID-token flow only (`lib/auth.ts` → `signInWithIdToken`); no anonymous auth. Mock mode is always "authenticated" (sign-in step skipped; onboarding still shows). Setup: `docs/AUTH_SETUP.md`.
 
 When you need library docs (Expo, Supabase, TanStack, Claude API), prefer the context7 MCP / Claude API skill over memory — these move fast.
 
@@ -60,12 +60,12 @@ supabase/
 - Supabase local / functions: `supabase start`, `supabase functions serve analyze-image`
 - Lint/test: _not configured yet — add ESLint + a test runner when needed, then update this._
 
-> Data source flag: `EXPO_PUBLIC_DATA_SOURCE` in `.env` (`mock` | `supabase`). Phase B is wired: `supabase` uses `SupabaseRepository` + `EdgeFunctionAnalyzer` against project `cwxgvpdbaihlulkiuucd`. It needs two one-time prereqs — Anonymous sign-ins enabled (Auth settings) + the `ANTHROPIC_API_KEY` Edge Function secret. `mock` stays fully working for fast UI iteration.
+> Data source flag: `EXPO_PUBLIC_DATA_SOURCE` in `.env` (`mock` | `supabase`). Phase B is wired: `supabase` uses `SupabaseRepository` + `EdgeFunctionAnalyzer` against project `cwxgvpdbaihlulkiuucd`. Prereqs for `supabase`: configure Apple/Google providers + the Google OAuth client IDs (`docs/AUTH_SETUP.md`) and set the `ANTHROPIC_API_KEY` Edge Function secret; a fresh dev-client build is needed (new native auth modules). `mock` stays fully working for fast UI iteration (auth gate bypassed).
 > Reanimated 4 note: its Babel plugin is `react-native-worklets/plugin` (in `babel.config.js`), not `react-native-reanimated/plugin`.
 > Fake camera flag: `EXPO_PUBLIC_FAKE_CAMERA=1` swaps the `CameraView` for bundled sample photos (`assets/fake-camera/`) fed through the normal downscale→analyze→result-card path — the simulator has no camera (black preview, unusable `takePictureAsync`). Pair with `EXPO_PUBLIC_DATA_SOURCE=mock` for a fully clickable, zero-cost capture flow. Samples are ordered to match `MockAnalyzer`'s script. Off by default / on device. See `lib/dev/fakeCamera.ts`.
 
 ## Data model (see IMPLEMENTATION_PLAN.md §Phase 1 for full SQL)
-`profiles` (goal, units, onboarding_completed, reminder schedule: enabled/interval/window) · `log_entries` (volume, beverage_type, hydration_coefficient, thumbnail_url, ai_confidence_score) · `ai_usage` (per-user AI rate-limit counters; written only by the `consume_ai_quota()` RPC) · `daily-summary` as a SQL view.
+`profiles` (display_name, avatar_url, goal, units, onboarding_completed, reminder schedule: enabled/interval/window; `avatar_url` seeded from the Google auth photo — Apple returns none) · `log_entries` (volume, beverage_type, hydration_coefficient, thumbnail_url, ai_confidence_score) · `ai_usage` (per-user AI rate-limit counters; written only by the `consume_ai_quota()` RPC) · `daily-summary` as a SQL view.
 
 ## Cost guardrails (Edge Function `analyze-image`)
 The AI call is the cost/abuse surface, so it's rate-limited **server-side** (a client-only limit is bypassable). Each request charges the caller's quota via the atomic `consume_ai_quota()` RPC (per-minute burst + per-day cap, RLS-scoped to `auth.uid()`); over-limit returns **429 + Retry-After**, oversized uploads return **413**. Limits are env-tunable without a redeploy (`AI_RATE_LIMIT_PER_MINUTE`=10, `AI_RATE_LIMIT_PER_DAY`=100, `AI_MAX_IMAGE_BASE64_CHARS`=6 MB). The limiter **fails open** if unreachable. Client maps 429 → `RateLimitError` (`lib/data/errors.ts`) → a friendly Alert on the camera. DB migrations now live in `supabase/migrations/` (earlier ones were applied directly to the remote project).

@@ -10,6 +10,7 @@
     "ios": {
       "bundleIdentifier": "com.xuanhieu2611.hydroai",
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Hydro AI uses the camera to photograph your drink and estimate how much you've had. Photos are processed and discarded — only the volume is saved.",
         "NSPhotoLibraryUsageDescription": "Hydro AI lets you add a drink from your camera roll if you forgot to log it in the moment.",
@@ -55,7 +56,22 @@
       ],
       "expo-notifications",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.810226355490-glijvf8g95crsjle4cskptg801s5atc6"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
