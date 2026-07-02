@@ -187,6 +187,20 @@ log_entries(
 
 ---
 
+## Phase C — Accountability Circle (social sharing) — PRD §3.5 (US-16–18)
+
+Hydro AI's first **cross-user** feature: connect with a partner/family/friend and see each other's *today* hydration to stay accountable. Built UI-first through the same `DataRepository` interface, so `mock` mode stays fully clickable.
+
+- [x] **Schema + RLS + RPCs** (`supabase/migrations/20260701130000_connections.sql`). `connections` (symmetric ordered pair `user_a < user_b`, unique) + `connection_invites` (short unambiguous code, 7-day expiry, single-use). Per-user RLS on both; all cross-user summary reads go through `SECURITY DEFINER` RPCs so raw `log_entries`/`profiles` stay locked to their owner: `create_connection_invite`, `claim_connection_invite`, `get_connections_overview` (today total + goal-met + streak, viewer-local day bounds), `remove_connection`. Streak computed server-side by `_hydro_partner_streak` (mirrors `lib/streak` — unmet today is in-progress). *(Migration written; not yet applied to the remote project — see verification below.)*
+- [x] **Types + repository** — `ConnectionSummary`/`ConnectionInvite` (`lib/data/types.ts`), `InviteError` (`lib/data/errors.ts`), 4 methods on `DataRepository`; `MockRepository` (seeded partners, in-memory invite/claim/remove) + `SupabaseRepository` (RPC calls, error mapping).
+- [x] **Hooks** — `useConnections`, `useCreateInvite`, `useClaimInvite`, `useRemoveConnection` (optimistic remove); `connections` query key.
+- [x] **UI** — `PartnerCard` (avatar-in-ring + streak), `CircleStrip` (Home widget, under the gauge), `app/friends.tsx` (invite via Share sheet + code entry + long-press remove), `app/invite/[code].tsx` deep-link claim (`hydroai://invite/<code>`, `lib/invite.ts`), Profile "Friends & accountability" row.
+- [ ] **Phase 2 — partner nudges (US-19, deferred):** sending a "drink water" push to *another* user's device needs infra we don't have yet (`lib/notifications` is **local-only**): (1) a `push_tokens` table + `expo-notifications` token registration on launch, with RLS; (2) an Edge Function `send-nudge` (verify an accepted connection exists, then POST the Expo Push API, rate-limited per sender via the `consume_ai_quota` pattern); (3) a `nudgeConnection` repo method + a nudge button on `PartnerCard`, reusing `lib/notifications/copy.ts` for voice. In-app reactions/emoji could ship first as a stepping stone.
+
+**Verification:** `mock` mode — Home shows seeded partners, invite Share sheet opens, code entry adds a partner, long-press removes (optimistic). `supabase` mode — apply the migration, test the four RPCs via SQL with two accounts, confirm a non-connected user cannot read another's `log_entries` directly and the overview RPC returns summary-only fields; trigger `hydroai://invite/<code>` to exercise the deep link.
+
+---
+
 ## Phase 5 — Hardening, 2nd Platform & Integrations (Week 6–8)
 
 - [ ] Test the second platform (Expo gives you both; verify camera/notification quirks on Android/iOS).

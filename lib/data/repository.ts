@@ -3,6 +3,8 @@ import type {
   LogEntry,
   NewLogEntry,
   DailySummary,
+  ConnectionSummary,
+  ConnectionInvite,
 } from './types';
 
 /**
@@ -32,4 +34,15 @@ export interface DataRepository {
   clearAllLogs(): Promise<void>;
   /** Delete the account — wipe logs and reset the profile to first-run state. */
   deleteAccount(): Promise<void>;
+
+  /* --- Accountability circle: share today's progress with partners/family --- */
+
+  /** Summary-only view of every accepted connection (both directions). */
+  getConnections(): Promise<ConnectionSummary[]>;
+  /** Mint (or reuse) a shareable invite code + deep link for the current user. */
+  createConnectionInvite(): Promise<ConnectionInvite>;
+  /** Redeem someone's invite `code`; returns the newly connected partner. */
+  claimConnectionInvite(code: string): Promise<ConnectionSummary>;
+  /** Drop a connection (either side may remove it). */
+  removeConnection(connectionId: string): Promise<void>;
 }

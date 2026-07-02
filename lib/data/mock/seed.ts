@@ -1,4 +1,4 @@
-import type { LogEntry, Profile } from '../types';
+import type { ConnectionSummary, LogEntry, Profile } from '../types';
 import { dateKeyDaysAgo } from '../../date';
 
 /** Stable ids for seeded rows; runtime additions use `genId`. */
@@ -80,4 +80,49 @@ export function buildSeedEntries(): LogEntry[] {
   });
 
   return entries;
+}
+
+/**
+ * Seeded accountability circle so the Home widget + Friends screen are fully
+ * clickable in mock mode. One partner is crushing their goal (with a streak),
+ * one is behind — the exact "nudge them" scenario the feature targets.
+ */
+export function buildSeedConnections(): ConnectionSummary[] {
+  return [
+    {
+      connection_id: genId('conn'),
+      partner: {
+        id: 'mock-partner-jordan',
+        display_name: 'Jordan',
+        avatar_url: null,
+      },
+      today: { total_intake_ml: 2150, goal_ml: 2000, goal_met: true },
+      streak: 6,
+    },
+    {
+      connection_id: genId('conn'),
+      partner: {
+        id: 'mock-partner-mom',
+        display_name: 'Mom',
+        avatar_url: null,
+      },
+      today: { total_intake_ml: 600, goal_ml: 1800, goal_met: false },
+      streak: 0,
+    },
+  ];
+}
+
+/** Canned partners handed out (round-robin) when claiming a code in mock mode. */
+export function buildClaimedConnection(index: number): ConnectionSummary {
+  const partners = [
+    { id: 'mock-partner-alex', display_name: 'Alex', total: 1250, goal: 2000, streak: 2 },
+    { id: 'mock-partner-sam2', display_name: 'Sam', total: 900, goal: 2200, streak: 0 },
+  ];
+  const p = partners[index % partners.length];
+  return {
+    connection_id: genId('conn'),
+    partner: { id: p.id, display_name: p.display_name, avatar_url: null },
+    today: { total_intake_ml: p.total, goal_ml: p.goal, goal_met: p.total >= p.goal },
+    streak: p.streak,
+  };
 }

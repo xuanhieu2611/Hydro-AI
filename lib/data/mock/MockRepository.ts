@@ -1,12 +1,23 @@
 import type { DataRepository } from '../repository';
 import type {
+  ConnectionInvite,
+  ConnectionSummary,
   DailySummary,
   LogEntry,
   NewLogEntry,
   Profile,
 } from '../types';
 import { dateKeyDaysAgo, isOnDate, todayKey } from '../../date';
-import { buildSeedEntries, genId, MOCK_USER_ID, seedProfile } from './seed';
+import { InviteError } from '../errors';
+import { inviteUrl } from '../../invite';
+import {
+  buildClaimedConnection,
+  buildSeedConnections,
+  buildSeedEntries,
+  genId,
+  MOCK_USER_ID,
+  seedProfile,
+} from './seed';
 
 /** Simulate network latency so optimistic updates are observable. */
 const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms));
@@ -23,6 +34,8 @@ function actualVolume(e: Pick<LogEntry, 'estimated_volume_ml' | 'user_adjusted_v
 export class MockRepository implements DataRepository {
   private profile: Profile = { ...seedProfile };
   private entries: LogEntry[] = buildSeedEntries();
+  private connections: ConnectionSummary[] = buildSeedConnections();
+  private claimCount = 0;
 
   async getProfile(): Promise<Profile> {
     await delay();
@@ -105,6 +118,7 @@ export class MockRepository implements DataRepository {
     // Wipe history and reset to a fresh, un-onboarded profile (keeps the id so
     // the rest of the session stays coherent; the real impl signs the user out).
     this.entries = [];
+    this.connections = [];
     this.profile = {
       ...seedProfile,
       id: this.profile.id,
@@ -112,6 +126,37 @@ export class MockRepository implements DataRepository {
       onboarding_completed: false,
       reminders_enabled: false,
     };
+  }
+
+  /* ----------------------------- connections ------------------------------ */
+
+  async getConnections(): Promise<ConnectionSummary[]> {
+    await delay();
+    return this.connections.map((c) => ({ ...c }));
+  }
+
+  async createConnectionInvite(): Promise<ConnectionInvite> {
+    await delay();
+    // Stable-ish code per session so re-opening the sheet shows the same one.
+    const code = genId('INV').replace(/[^A-Z0-9]/gi, '').slice(-8).toUpperCase();
+    const expires = new Date();
+    expires.setDate(expires.getDate() + 7);
+    return { code, url: inviteUrl(code), expires_at: expires.toISOString() };
+  }
+
+  async claimConnectionInvite(code: string): Promise<ConnectionSummary> {
+    await delay();
+    if (!code.trim()) {
+      throw new InviteError('not_found', "That code doesn't look right.");
+    }
+    const connection = buildClaimedConnection(this.claimCount++);
+    this.connections.push(connection);
+    return { ...connection };
+  }
+
+  async removeConnection(connectionId: string): Promise<void> {
+    await delay();
+    this.connections = this.connections.filter((c) => c.connection_id !== connectionId);
   }
 
   /** Synchronous rollup used by both summary methods. */

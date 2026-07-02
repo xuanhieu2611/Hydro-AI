@@ -17,4 +17,5 @@ export const queryKeys = {
   logEntries: (date: string) => ['logEntries', date] as const,
   dailySummary: (date: string) => ['dailySummary', date] as const,
   history: (rangeDays: number) => ['history', rangeDays] as const,
+  connections: ['connections'] as const,
 };

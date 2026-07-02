@@ -10,6 +10,7 @@ import { LiquidGauge } from '@/components/LiquidGauge';
 import { CountUp } from '@/components/CountUp';
 import { LogFeed } from '@/components/LogFeed';
 import { QuickLogBar } from '@/components/QuickLogBar';
+import { CircleStrip } from '@/components/CircleStrip';
 import { ErrorState } from '@/components/StateViews';
 import { useProfile, useDailySummary, useLogEntries, useHistory } from '@/lib/query/hooks';
 import { celebrateGoalMet } from '@/lib/notifications';
@@ -117,6 +118,9 @@ export default function HomeScreen() {
               : `${formatVolume(remaining, unit)} to go`}
           </Text>
         </View>
+
+        {/* Accountability circle — partners' progress at a glance */}
+        <CircleStrip unit={unit} />
 
         {/* Quick log — one-tap common drinks, no photo (PRD §4.3) */}
         <View className="mt-8">

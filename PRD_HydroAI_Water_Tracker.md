@@ -102,6 +102,17 @@ Build a delightful, frictionless mobile experience where taking a photo of your 
 | US-14 | As a user, I want to customize the frequency and timing of hydration reminders.      | P1       |
 | US-15 | As a user, I want a congratulatory notification when I hit my daily goal.            | P2       |
 
+### 3.5 Accountability Circle (Social)
+
+| ID    | User Story                                                                                                                            | Priority |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| US-16 | As a user, I want to connect with a partner/family/friend via a shareable code or link so we can keep each other accountable.        | P1       |
+| US-17 | As a user, I want to see a connected person's hydration progress for today (summary only — total, goal, streak), never their logs.   | P1       |
+| US-18 | As a user, I want to remove a connection at any time so sharing is fully under my control.                                           | P1       |
+| US-19 | As a user, I want to send a connected person a gentle "drink water" nudge notification. **(Phase 2 — needs remote push infra.)**     | P2       |
+
+**Privacy scope (hard):** a connection exposes *only* the other person's today-summary (total ml, goal, goal-met, current streak) and public name/avatar — never individual `log_entries` rows or drink photos. Connections are symmetric (both sides see each other) and enforced in the database via `SECURITY DEFINER` RPCs, not just the UI.
+
 ---
 
 ## 4. Feature Specifications

@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import { VolumeAdjuster } from '@/components/VolumeAdjuster';
 import { colors, gradients } from '@/lib/theme';
@@ -40,6 +41,7 @@ export default function ProfileScreen() {
   const clearData = useClearAllData();
   const deleteAccount = useDeleteAccount();
   const identity = useAuthIdentity();
+  const router = useRouter();
 
   const unit = profile.data?.unit_preference ?? 'ml';
 
@@ -335,6 +337,20 @@ export default function ProfileScreen() {
                   />
                 </View>
               )}
+            </Card>
+          </Section>
+        </Animated.View>
+
+        {/* Friends & accountability — share today's progress with a circle */}
+        <Animated.View entering={FadeInDown.springify().damping(18).delay(285)}>
+          <Section title="Friends & accountability">
+            <Card>
+              <Row
+                icon="people-outline"
+                label="Your circle"
+                onPress={() => router.push('/friends')}
+                chevron
+              />
             </Card>
           </Section>
         </Animated.View>

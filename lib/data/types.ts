@@ -112,3 +112,38 @@ export interface DailySummary {
   goal_met: boolean;
   entry_count: number;
 }
+
+/**
+ * An accountability connection as seen by one side of it: the partner's public
+ * identity plus their *today* progress and current streak. This is the ONLY
+ * shape of another user's data that ever crosses the boundary — summary only,
+ * never individual log rows or photos (privacy scope locked with the user).
+ * The Supabase impl builds it server-side via the `get_connections_overview`
+ * SECURITY DEFINER RPC so raw `log_entries` stay locked to their owner.
+ */
+export interface ConnectionSummary {
+  connection_id: string;
+  partner: {
+    id: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  };
+  today: {
+    total_intake_ml: number;
+    goal_ml: number;
+    goal_met: boolean;
+  };
+  /** Consecutive goal-met days (same rule as `computeStreaks`), server-side. */
+  streak: number;
+}
+
+/**
+ * A shareable invite the user hands to a partner/family/friend. `code` is the
+ * short human-typable token; `url` is the deep link (`hydroai://invite/<code>`)
+ * for the native Share sheet. Claiming it connects the two accounts.
+ */
+export interface ConnectionInvite {
+  code: string;
+  url: string;
+  expires_at: string; // ISO timestamp
+}

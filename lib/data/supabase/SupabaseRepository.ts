@@ -2,9 +2,18 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { decode as decodeBase64 } from 'base64-arraybuffer';
 
 import type { DataRepository } from '../repository';
-import type { DailySummary, LogEntry, NewLogEntry, Profile } from '../types';
+import type {
+  ConnectionInvite,
+  ConnectionSummary,
+  DailySummary,
+  LogEntry,
+  NewLogEntry,
+  Profile,
+} from '../types';
 import { supabase, currentUserId, resetSession } from '../../supabase/client';
-import { dateKeyDaysAgo, toDateKey } from '../../date';
+import { dateKeyDaysAgo, toDateKey, todayKey } from '../../date';
+import { InviteError, type InviteFailure } from '../errors';
+import { inviteUrl } from '../../invite';
 
 const THUMBNAIL_BUCKET = 'thumbnails';
 /** Signed-URL lifetime for thumbnails. Comfortably longer than query staleTime. */
@@ -208,6 +217,50 @@ export class SupabaseRepository implements DataRepository {
     await resetSession();
   }
 
+  /* ----------------------------- connections ------------------------------ */
+
+  async getConnections(): Promise<ConnectionSummary[]> {
+    await currentUserId();
+    const { startISO, endISO } = dayBounds(todayKey());
+    const { data, error } = await supabase.rpc('get_connections_overview', {
+      p_day_start: startISO,
+      p_day_end: endISO,
+    });
+    if (error) throw error;
+    return ((data ?? []) as OverviewRow[]).map(toConnectionSummary);
+  }
+
+  async createConnectionInvite(): Promise<ConnectionInvite> {
+    await currentUserId();
+    const { data, error } = await supabase.rpc('create_connection_invite');
+    if (error) throw error;
+    const row = (data ?? [])[0] as { code: string; expires_at: string } | undefined;
+    if (!row) throw new Error('Could not create an invite.');
+    return { code: row.code, url: inviteUrl(row.code), expires_at: row.expires_at };
+  }
+
+  async claimConnectionInvite(code: string): Promise<ConnectionSummary> {
+    await currentUserId();
+    const { startISO, endISO } = dayBounds(todayKey());
+    const { data, error } = await supabase.rpc('claim_connection_invite', {
+      p_code: code.trim(),
+      p_day_start: startISO,
+      p_day_end: endISO,
+    });
+    if (error) throw mapInviteError(error);
+    const row = (data ?? [])[0] as OverviewRow | undefined;
+    if (!row) throw new InviteError('not_found', "That code doesn't look right.");
+    return toConnectionSummary(row);
+  }
+
+  async removeConnection(connectionId: string): Promise<void> {
+    await currentUserId();
+    const { error } = await supabase.rpc('remove_connection', {
+      p_connection_id: connectionId,
+    });
+    if (error) throw error;
+  }
+
   /* ------------------------------- helpers -------------------------------- */
 
   /** Volume-only rows for a time range (lean; no thumbnail signing). */
@@ -263,6 +316,54 @@ export class SupabaseRepository implements DataRepository {
 
 function isLocalUri(uri: string): boolean {
   return uri.startsWith('file:') || uri.startsWith('content:') || uri.startsWith('/');
+}
+
+/** Flat row shape returned by the connection overview / claim RPCs. */
+interface OverviewRow {
+  connection_id: string;
+  partner_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  total_intake_ml: number;
+  goal_ml: number;
+  goal_met: boolean;
+  streak: number;
+}
+
+function toConnectionSummary(row: OverviewRow): ConnectionSummary {
+  return {
+    connection_id: row.connection_id,
+    partner: {
+      id: row.partner_id,
+      display_name: row.display_name,
+      avatar_url: row.avatar_url,
+    },
+    today: {
+      total_intake_ml: row.total_intake_ml ?? 0,
+      goal_ml: row.goal_ml ?? 0,
+      goal_met: !!row.goal_met,
+    },
+    streak: row.streak ?? 0,
+  };
+}
+
+/** Map the claim RPC's raised messages to a typed, user-friendly InviteError. */
+function mapInviteError(error: { message?: string }): Error {
+  const msg = error.message ?? '';
+  const cases: Record<string, [InviteFailure, string]> = {
+    invite_not_found: ['not_found', "We couldn't find that invite code."],
+    invite_expired: ['expired', 'That invite has expired — ask for a new one.'],
+    invite_already_claimed: ['already_claimed', 'That invite has already been used.'],
+    invite_self: ['self', "That's your own invite code."],
+    already_connected: ['already_connected', "You're already connected with them."],
+  };
+  for (const key of Object.keys(cases)) {
+    if (msg.includes(key)) {
+      const [reason, friendly] = cases[key];
+      return new InviteError(reason, friendly);
+    }
+  }
+  return error as Error;
 }
 
 function summaryFor(

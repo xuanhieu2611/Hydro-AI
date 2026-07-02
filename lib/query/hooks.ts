@@ -9,6 +9,8 @@ import {
 import { analyzer, dataSource, repository } from '../data';
 import type {
   AnalysisResult,
+  ConnectionInvite,
+  ConnectionSummary,
   DailySummary,
   LogEntry,
   NewLogEntry,
@@ -331,6 +333,63 @@ export function useDeleteAccount() {
     onSuccess: () => {
       // Profile reset flips the onboarding gate; clear all caches.
       qc.invalidateQueries();
+    },
+  });
+}
+
+/* ------------------------------- connections -------------------------------- */
+
+/**
+ * The user's accountability circle — every connected partner's today-summary +
+ * streak (summary only, never their logs). Gated on a session like `useProfile`
+ * since the underlying RPC requires `auth.uid()`.
+ */
+export function useConnections() {
+  const session = useSession();
+  return useQuery({
+    queryKey: queryKeys.connections,
+    queryFn: () => repository.getConnections(),
+    enabled: session === 'authenticated',
+  });
+}
+
+/** Mint/reuse a shareable invite code + deep link for the current user. */
+export function useCreateInvite() {
+  return useMutation<ConnectionInvite, Error, void>({
+    mutationFn: () => repository.createConnectionInvite(),
+  });
+}
+
+/** Redeem a partner's code; refreshes the circle on success. */
+export function useClaimInvite() {
+  const qc = useQueryClient();
+  return useMutation<ConnectionSummary, Error, string>({
+    mutationFn: (code: string) => repository.claimConnectionInvite(code),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.connections });
+    },
+  });
+}
+
+/** Remove a connection with an optimistic drop from the circle list. */
+export function useRemoveConnection() {
+  const qc = useQueryClient();
+  const key = queryKeys.connections;
+  return useMutation<void, Error, string, { previous?: ConnectionSummary[] }>({
+    mutationFn: (connectionId: string) => repository.removeConnection(connectionId),
+    onMutate: async (connectionId) => {
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<ConnectionSummary[]>(key);
+      qc.setQueryData<ConnectionSummary[]>(key, (old) =>
+        (old ?? []).filter((c) => c.connection_id !== connectionId),
+      );
+      return { previous };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) qc.setQueryData(key, ctx.previous);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: key });
     },
   });
 }

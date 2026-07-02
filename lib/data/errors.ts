@@ -35,3 +35,25 @@ export class AuthCancelledError extends Error {
     this.name = 'AuthCancelledError';
   }
 }
+
+/**
+ * Claiming a connection invite failed for a reason worth showing the user
+ * (bad/expired code, already connected, or their own code). `reason` lets the
+ * UI branch; `message` is a friendly line safe to surface in an Alert.
+ */
+export type InviteFailure =
+  | 'not_found'
+  | 'expired'
+  | 'already_claimed'
+  | 'already_connected'
+  | 'self';
+
+export class InviteError extends Error {
+  readonly reason: InviteFailure;
+
+  constructor(reason: InviteFailure, message: string) {
+    super(message);
+    this.name = 'InviteError';
+    this.reason = reason;
+  }
+}

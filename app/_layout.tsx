@@ -135,6 +135,11 @@ function RootNavigator() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <Stack.Screen
+          name="friends"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen name="invite/[code]" options={{ presentation: 'modal' }} />
+        <Stack.Screen
           name="dev"
           options={{ presentation: 'modal', title: 'Dev / Data layer check' }}
         />
