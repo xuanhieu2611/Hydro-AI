@@ -311,6 +311,13 @@ export function useDeleteLog(date: string = todayKey()) {
   });
 }
 
+/** Export a portable snapshot of the user's data (profile + logs). GDPR/CCPA. */
+export function useExportData() {
+  return useMutation({
+    mutationFn: () => repository.exportData(),
+  });
+}
+
 /** Wipe all logged history (keeps the profile). GDPR/CCPA, Phase 4. */
 export function useClearAllData() {
   const qc = useQueryClient();

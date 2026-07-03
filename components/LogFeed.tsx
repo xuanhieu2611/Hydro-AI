@@ -4,8 +4,10 @@ import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
 import { VolumeAdjuster } from './VolumeAdjuster';
+import { BeverageIcon } from './BeverageIcon';
 import { useDeleteLog, useUpdateLog } from '@/lib/query/hooks';
-import { beverageEmoji, beverageLabel } from '@/lib/beverage';
+import { colors } from '@/lib/theme';
+import { beverageLabel } from '@/lib/beverage';
 import { formatTime } from '@/lib/date';
 import { formatVolume } from '@/lib/units';
 import type { LogEntry, UnitPreference } from '@/lib/data/types';
@@ -62,7 +64,7 @@ function LogRow({
         <Image source={{ uri: entry.thumbnail_url }} className="h-11 w-11 rounded-xl" />
       ) : (
         <View className="h-11 w-11 items-center justify-center rounded-xl bg-hydro-50">
-          <Text className="text-xl">{beverageEmoji(entry.beverage_type)}</Text>
+          <BeverageIcon type={entry.beverage_type} size={22} color={colors.hydro[600]} />
         </View>
       )}
       <View className="flex-1">
@@ -129,7 +131,7 @@ function EditSheetBody({
       <View className="mb-5 h-1.5 w-12 self-center rounded-full bg-slate-200" />
       <Animated.View entering={FadeIn.delay(100)}>
         <View className="mb-6 flex-row items-center gap-3">
-          <Text className="text-3xl">{beverageEmoji(entry.beverage_type)}</Text>
+          <BeverageIcon type={entry.beverage_type} size={28} />
           <Text className="text-xl font-bold text-slate-900">
             {beverageLabel(entry.beverage_type)}
           </Text>

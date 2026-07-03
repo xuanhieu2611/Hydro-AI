@@ -9,10 +9,9 @@ import { Asset } from 'expo-asset';
  * Enabled by `EXPO_PUBLIC_FAKE_CAMERA=1`. On a real device it's off and the
  * real `CameraView` is used.
  *
- * The sample order mirrors `MockAnalyzer`'s SCRIPT so the still shown in the
- * viewfinder visually matches the result the analyzer returns for that capture
- * (coffee mug → confident coffee, glass → confident water, tumbler → a
- * low-confidence range, laptop → "not a drink").
+ * Uses a single realistic "hand holding a glass of water" photo so the
+ * viewfinder looks like a real capture. `MockAnalyzer` always returns the
+ * matching confident water estimate for that photo.
  */
 export const FAKE_CAMERA_ENABLED = process.env.EXPO_PUBLIC_FAKE_CAMERA === '1';
 
@@ -23,10 +22,10 @@ export interface FakeCameraSample {
 }
 
 export const FAKE_CAMERA_SAMPLES: FakeCameraSample[] = [
-  { label: 'Coffee mug', source: require('../../assets/fake-camera/coffee-mug.jpg') },
-  { label: 'Glass of water', source: require('../../assets/fake-camera/water-glass.jpg') },
-  { label: 'Tumbler', source: require('../../assets/fake-camera/tumbler.jpg') },
-  { label: 'Not a drink', source: require('../../assets/fake-camera/not-a-drink.jpg') },
+  {
+    label: 'Glass of water',
+    source: require('../../assets/fake-camera/holdingWater.jpg'),
+  },
 ];
 
 /**

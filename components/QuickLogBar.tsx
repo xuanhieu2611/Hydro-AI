@@ -1,5 +1,7 @@
 import { View, Text, Pressable } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { tapLight } from '@/lib/haptics';
+import { colors } from '@/lib/theme';
 import { useAddLog } from '@/lib/query/hooks';
 import { QUICK_LOG_TILES, tileToLogEntry, type QuickLogTile } from '@/lib/quicklog';
 import { analytics } from '@/lib/analytics';
@@ -60,7 +62,7 @@ function QuickTile({
         shadowOffset: { width: 0, height: 6 },
       }}
     >
-      <Text className="text-2xl">{tile.emoji}</Text>
+      <MaterialCommunityIcons name={tile.icon} size={26} color={colors.hydro[500]} />
       <Text className="text-xs font-semibold text-slate-700">{tile.label}</Text>
       <Text className="text-[11px] font-medium text-hydro-500">
         +{formatVolume(tile.volumeMl, unit)}

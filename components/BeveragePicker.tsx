@@ -1,6 +1,8 @@
 import { View, Text, Pressable } from 'react-native';
 
-import { BEVERAGE_EMOJI, BEVERAGE_LABELS } from '@/lib/beverage';
+import { BeverageIcon } from './BeverageIcon';
+import { BEVERAGE_LABELS } from '@/lib/beverage';
+import { colors } from '@/lib/theme';
 import type { BeverageType } from '@/lib/data/types';
 
 const ORDER: BeverageType[] = [
@@ -34,7 +36,11 @@ export function BeveragePicker({ value, onChange }: BeveragePickerProps) {
                 : 'border-slate-200 bg-white active:bg-slate-50'
             }`}
           >
-            <Text className="text-base">{BEVERAGE_EMOJI[type]}</Text>
+            <BeverageIcon
+              type={type}
+              size={18}
+              color={selected ? colors.hydro[700] : colors.slate[500]}
+            />
             <Text
               className={`text-sm font-medium ${
                 selected ? 'text-hydro-700' : 'text-slate-600'

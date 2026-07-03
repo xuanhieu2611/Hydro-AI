@@ -7,6 +7,13 @@ import type {
   ConnectionInvite,
 } from './types';
 
+/** A full, portable snapshot of the user's data (GDPR/CCPA "download my data"). */
+export interface AccountExport {
+  exported_at: string;
+  profile: Profile;
+  log_entries: LogEntry[];
+}
+
 /**
  * The single data-access contract the entire app codes against.
  *
@@ -30,6 +37,8 @@ export interface DataRepository {
   /** Most-recent-first summaries for the past `rangeDays` days (incl. today). */
   getHistory(rangeDays: number): Promise<DailySummary[]>;
 
+  /** GDPR/CCPA: a portable snapshot of the user's profile + full log history. */
+  exportData(): Promise<AccountExport>;
   /** GDPR/CCPA (Phase 4): wipe all log history, keep the profile. */
   clearAllLogs(): Promise<void>;
   /** Delete the account — wipe logs and reset the profile to first-run state. */

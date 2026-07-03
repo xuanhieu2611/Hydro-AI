@@ -81,8 +81,13 @@ function Avatar({ name, avatarUrl }: { name: string; avatarUrl: string | null })
   return (
     <LinearGradient
       colors={gradients.hero}
-      style={{ width: 54, height: 54, borderRadius: 27 }}
-      className="items-center justify-center"
+      style={{
+        width: 54,
+        height: 54,
+        borderRadius: 27,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
     >
       {initial ? (
         <Text className="text-xl font-bold text-white">{initial}</Text>

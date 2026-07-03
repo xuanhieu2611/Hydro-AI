@@ -4,10 +4,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 import { VolumeAdjuster } from './VolumeAdjuster';
+import { BeverageIcon } from './BeverageIcon';
 import { tapLight } from '@/lib/haptics';
 import { gradients } from '@/lib/theme';
 import {
-  beverageEmoji,
   beverageLabel,
   containerLabel,
   hydrationClass,
@@ -100,7 +100,7 @@ function DrinkPanel({
     <View>
       {/* What the AI read — the "it recognised my drink" line. */}
       <View className="flex-row items-center gap-3">
-        <Text className="text-3xl">{beverageEmoji(result.beverage_type)}</Text>
+        <BeverageIcon type={result.beverage_type} size={30} />
         <View className="flex-1">
           <Text className="text-xl font-bold text-slate-900">
             {beverageLabel(result.beverage_type)}

@@ -60,12 +60,11 @@ const SCRIPT: AnalysisResult[] = [
 ];
 
 export class MockAnalyzer implements Analyzer {
-  private cursor = 0;
-
   async analyzeImage(_uri: string): Promise<AnalysisResult> {
     await delay();
-    const result = SCRIPT[this.cursor % SCRIPT.length];
-    this.cursor += 1;
-    return { ...result };
+    // Fake camera shows a single glass-of-water photo, so always return the
+    // matching confident water estimate. Other SCRIPT cases kept for reference.
+    const water = SCRIPT[1];
+    return { ...water };
   }
 }

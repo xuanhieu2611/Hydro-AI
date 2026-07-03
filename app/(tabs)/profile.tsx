@@ -9,7 +9,10 @@ import {
   ScrollView,
   TextInput,
   Image,
+  Share,
+  Platform,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -24,6 +27,7 @@ import {
   useUpdateProfile,
   useClearAllData,
   useDeleteAccount,
+  useExportData,
   useAuthIdentity,
 } from '@/lib/query/hooks';
 import { formatVolume } from '@/lib/units';
@@ -40,6 +44,7 @@ export default function ProfileScreen() {
   const updateProfile = useUpdateProfile();
   const clearData = useClearAllData();
   const deleteAccount = useDeleteAccount();
+  const exportData = useExportData();
   const identity = useAuthIdentity();
   const router = useRouter();
 
@@ -121,6 +126,32 @@ export default function ProfileScreen() {
         },
       ],
     );
+  };
+
+  // Export the user's data to a JSON file and hand it to the OS share sheet.
+  // iOS shares the file itself; Android gets the JSON as text (file:// URIs
+  // aren't shareable there without a content provider).
+  const handleExport = () => {
+    exportData.mutate(undefined, {
+      onSuccess: async (data) => {
+        const json = JSON.stringify(data, null, 2);
+        try {
+          if (Platform.OS === 'ios') {
+            const stamp = new Date().toISOString().slice(0, 10);
+            const uri = `${FileSystem.cacheDirectory}hydro-ai-data-${stamp}.json`;
+            await FileSystem.writeAsStringAsync(uri, json);
+            await Share.share({ url: uri });
+          } else {
+            await Share.share({ message: json });
+          }
+          analytics.track('data_exported', {});
+        } catch {
+          // User dismissed the share sheet — nothing to do.
+        }
+      },
+      onError: () =>
+        Alert.alert('Export failed', 'Could not prepare your data. Please try again.'),
+    });
   };
 
   const confirmSignOut = () => {
@@ -402,6 +433,13 @@ export default function ProfileScreen() {
           <Section title="Data & account">
             <Card>
               <Row
+                icon="download-outline"
+                label="Export my data"
+                onPress={handleExport}
+                loading={exportData.isPending}
+              />
+              <Divider />
+              <Row
                 icon="trash-outline"
                 label="Clear all history"
                 onPress={confirmClear}
@@ -482,13 +520,22 @@ function IdentityHeader({
       ) : (
         <LinearGradient
           colors={gradients.hero}
-          style={{ width: 64, height: 64, borderRadius: 32 }}
-          className="items-center justify-center"
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 32,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
         >
           {initial ? (
-            <Text className="text-2xl font-bold text-white">{initial}</Text>
+            <Text className="text-2xl font-bold text-white" style={{ textAlign: 'center' }}>
+              {initial}
+            </Text>
           ) : (
-            <Text className="text-3xl">💧</Text>
+            <Text className="text-3xl" style={{ textAlign: 'center' }}>
+              💧
+            </Text>
           )}
         </LinearGradient>
       )}

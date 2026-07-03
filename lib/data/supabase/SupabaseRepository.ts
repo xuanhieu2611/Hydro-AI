@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode as decodeBase64 } from 'base64-arraybuffer';
 
-import type { DataRepository } from '../repository';
+import type { AccountExport, DataRepository } from '../repository';
 import type {
   ConnectionInvite,
   ConnectionSummary,
@@ -199,6 +199,25 @@ export class SupabaseRepository implements DataRepository {
     });
   }
 
+  async exportData(): Promise<AccountExport> {
+    await currentUserId(); // RLS scopes both reads to the caller
+    const [profile, { data, error }] = await Promise.all([
+      this.getProfile(),
+      supabase
+        .from('log_entries')
+        .select(LOG_COLUMNS)
+        .order('logged_at', { ascending: false }),
+    ]);
+    if (error) throw error;
+    return {
+      exported_at: new Date().toISOString(),
+      profile,
+      // thumbnail_url stays as the stored object path — a stable reference that
+      // (unlike a signed URL) won't expire in the exported file.
+      log_entries: (data ?? []) as unknown as LogEntry[],
+    };
+  }
+
   async clearAllLogs(): Promise<void> {
     const uid = await currentUserId();
     await this.removeAllThumbnails(uid);
@@ -208,12 +227,16 @@ export class SupabaseRepository implements DataRepository {
 
   async deleteAccount(): Promise<void> {
     const uid = await currentUserId();
+    // Storage objects aren't FK-cascaded, so purge thumbnails first.
     await this.removeAllThumbnails(uid);
-    await supabase.from('log_entries').delete().eq('user_id', uid);
-    // The client can't delete its own `auth.users` row (that needs an admin
-    // Edge Function — see IMPLEMENTATION_PLAN follow-up). Sign out instead: the
-    // auth-state listener routes back to the sign-in gate, and signing in again
-    // (or with another provider) starts a fresh, un-onboarded profile.
+    // The client can't delete its own `auth.users` row (that needs the
+    // service-role key). The `delete-account` Edge Function does it with an
+    // admin client; the ON DELETE CASCADE FKs then remove profiles,
+    // log_entries, ai_usage, and connections in one shot.
+    const { error } = await supabase.functions.invoke('delete-account');
+    if (error) throw error;
+    // Session tokens are now orphaned — clear them so the auth-state listener
+    // routes back to the sign-in gate.
     await resetSession();
   }
 

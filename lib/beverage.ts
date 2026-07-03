@@ -1,9 +1,15 @@
+import type { ComponentProps } from 'react';
+import type { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { BeverageType, ContainerType } from './data/types';
 
 /**
  * Presentation helpers for beverages, containers, and hydration class.
  * Pure display concerns — the canonical data lives in ml on LogEntry.
  */
+
+export type MaterialCommunityIconName = ComponentProps<
+  typeof MaterialCommunityIcons
+>['name'];
 
 export const BEVERAGE_LABELS: Record<BeverageType, string> = {
   water: 'Water',
@@ -15,15 +21,19 @@ export const BEVERAGE_LABELS: Record<BeverageType, string> = {
   other: 'Drink',
 };
 
-/** Emoji glyphs read more clearly than the limited Ionicons drink set. */
-export const BEVERAGE_EMOJI: Record<BeverageType, string> = {
-  water: '💧',
-  coffee: '☕️',
-  tea: '🍵',
-  juice: '🧃',
-  soda: '🥤',
-  smoothie: '🥤',
-  other: '🥛',
+/**
+ * Vector-icon glyphs (MaterialCommunityIcons). Preferred over emoji: emoji fall
+ * back to tofu (❓) on iOS Simulators and drift across OS versions, whereas these
+ * render identically everywhere and tint to the brand color.
+ */
+export const BEVERAGE_ICON: Record<BeverageType, MaterialCommunityIconName> = {
+  water: 'cup-water',
+  coffee: 'coffee',
+  tea: 'tea',
+  juice: 'bottle-soda-classic',
+  soda: 'cup',
+  smoothie: 'cup',
+  other: 'cup-water',
 };
 
 export const CONTAINER_LABELS: Record<ContainerType, string> = {
@@ -71,8 +81,8 @@ export function beverageLabel(type: BeverageType | null): string {
   return type ? BEVERAGE_LABELS[type] : 'Drink';
 }
 
-export function beverageEmoji(type: BeverageType | null): string {
-  return type ? BEVERAGE_EMOJI[type] : '🥛';
+export function beverageIcon(type: BeverageType | null): MaterialCommunityIconName {
+  return type ? BEVERAGE_ICON[type] : 'cup-water';
 }
 
 export function containerLabel(type: ContainerType | null): string {

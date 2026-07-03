@@ -174,24 +174,16 @@ export default function CameraModal() {
   return (
     <View className="flex-1 bg-black">
       {FAKE_CAMERA_ENABLED ? (
-        // Simulator-friendly stand-in for the (black) camera preview.
-        <Image source={fakeSample.source} style={{ flex: 1 }} resizeMode="cover" />
+        <Image
+          source={fakeSample.source}
+          style={{ flex: 1, width: '100%' }}
+          resizeMode="cover"
+        />
       ) : (
         <CameraView ref={cameraRef} style={{ flex: 1 }} facing="back" />
       )}
 
       <CloseButton onPress={() => router.back()} />
-
-      {FAKE_CAMERA_ENABLED && !capturedUri && (
-        <View className="absolute inset-x-0 top-16 flex-row items-center justify-center">
-          <View className="flex-row items-center gap-1.5 rounded-full bg-amber-500/90 px-3 py-1">
-            <Ionicons name="construct" size={12} color="white" />
-            <Text className="text-xs font-semibold text-white">
-              Fake camera · {fakeSample.label}
-            </Text>
-          </View>
-        </View>
-      )}
 
       {/* Shutter + gallery — hidden once a shot is captured so the print has room. */}
       {!capturedUri && (

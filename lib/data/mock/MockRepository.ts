@@ -1,4 +1,4 @@
-import type { DataRepository } from '../repository';
+import type { AccountExport, DataRepository } from '../repository';
 import type {
   ConnectionInvite,
   ConnectionSummary,
@@ -106,6 +106,18 @@ export class MockRepository implements DataRepository {
     return Array.from({ length: rangeDays }, (_, i) =>
       this.summaryFor(dateKeyDaysAgo(i)),
     );
+  }
+
+  async exportData(): Promise<AccountExport> {
+    await delay();
+    return {
+      exported_at: new Date().toISOString(),
+      profile: { ...this.profile },
+      log_entries: this.entries
+        .slice()
+        .sort((a, b) => b.logged_at.localeCompare(a.logged_at))
+        .map((e) => ({ ...e })),
+    };
   }
 
   async clearAllLogs(): Promise<void> {

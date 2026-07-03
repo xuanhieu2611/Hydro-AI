@@ -14,10 +14,11 @@ import Animated, {
 import { Ionicons } from '@expo/vector-icons';
 
 import { LoadingState, ErrorState, EmptyState } from '@/components/StateViews';
+import { BeverageIcon } from '@/components/BeverageIcon';
 import { useHistory, useProfile, useLogEntries } from '@/lib/query/hooks';
 import { colors, gradients } from '@/lib/theme';
 import { formatVolume } from '@/lib/units';
-import { beverageEmoji, beverageLabel } from '@/lib/beverage';
+import { beverageLabel } from '@/lib/beverage';
 import { formatDayLabel, formatTime, todayKey } from '@/lib/date';
 import { computeStreaks } from '@/lib/streak';
 import { tapSelection } from '@/lib/haptics';
@@ -362,7 +363,7 @@ function DayDrinkRow({ entry, unit }: { entry: LogEntry; unit: UnitPreference })
   return (
     <View className="flex-row items-center gap-3 rounded-2xl border border-slate-100 bg-white/80 px-3 py-3">
       <View className="h-10 w-10 items-center justify-center rounded-xl bg-hydro-50">
-        <Text className="text-lg">{beverageEmoji(entry.beverage_type)}</Text>
+        <BeverageIcon type={entry.beverage_type} size={20} color={colors.hydro[600]} />
       </View>
       <View className="flex-1">
         <Text className="text-base font-semibold text-slate-800">
