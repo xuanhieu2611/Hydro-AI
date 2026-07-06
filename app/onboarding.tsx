@@ -80,14 +80,6 @@ export default function Onboarding() {
     setDir(-1);
     setStep((s) => Math.max(0, s - 1) as Step);
   };
-  // Skip can't finish without an account — jump to the sign-in step instead.
-  const skip = () => {
-    analytics.track('onboarding_skipped', {});
-    tapSelection();
-    setDir(1);
-    setStep(LAST_STEP);
-  };
-
   const buildDraft = (): OnboardingDraft => {
     const trimmedName = name.trim();
     return {
@@ -134,16 +126,9 @@ export default function Onboarding() {
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Header: progress bar + Skip */}
+        {/* Header: progress bar */}
         <View className="flex-row items-center gap-4 px-6 pt-2">
           <ProgressBar step={step} />
-          {step < LAST_STEP ? (
-            <Pressable onPress={skip} hitSlop={8}>
-              <Text className="text-sm font-medium text-slate-400">Skip</Text>
-            </Pressable>
-          ) : (
-            <View className="w-7" />
-          )}
         </View>
 
         <Animated.View
