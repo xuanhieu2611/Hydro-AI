@@ -22,6 +22,7 @@ import {
   syncStreakDanger,
 } from '@/lib/notifications';
 import { configureGoogleSignin } from '@/lib/auth';
+import { BillingProvider, useBilling } from '@/lib/billing/context';
 import { analytics } from '@/lib/analytics';
 
 // Foreground handler must be registered before any notification can present.
@@ -34,8 +35,10 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
-          <StatusBar style="dark" />
-          <RootNavigator />
+          <BillingProvider>
+            <StatusBar style="dark" />
+            <RootNavigator />
+          </BillingProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
@@ -107,12 +110,23 @@ function RootNavigator() {
     authenticated && !!profile.data && !onboarded,
   );
 
+  // Hard paywall: once onboarded, the app is reachable only with the premium
+  // entitlement — otherwise the `paywall` route is the only thing shown. The
+  // check runs after sign-in so RevenueCat identifies the customer by uid.
+  // Mock mode reports entitled immediately (bypassed) unless FORCE_PAYWALL.
+  const billing = useBilling();
+  const entitled = billing.entitled;
+  const entitlementResolving =
+    authenticated && onboarded && billing.status === 'loading';
+
   // Hold the splash while fonts/session load, (once signed in) while the profile
-  // resolves, and while finalizing — so we never flash the wrong screen.
+  // resolves, while finalizing, and while the entitlement check is in flight —
+  // so we never flash the wrong screen.
   const booting =
     !fontsLoaded ||
     session === 'loading' ||
-    (authenticated && (profile.isLoading || !profile.data));
+    (authenticated && (profile.isLoading || !profile.data)) ||
+    entitlementResolving;
 
   if (booting || finalizing) {
     return (
@@ -127,7 +141,7 @@ function RootNavigator() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={authenticated && onboarded}>
+      <Stack.Protected guard={authenticated && onboarded && entitled}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="camera"
@@ -146,6 +160,9 @@ function RootNavigator() {
           name="dev"
           options={{ presentation: 'modal', title: 'Dev / Data layer check' }}
         />
+      </Stack.Protected>
+      <Stack.Protected guard={authenticated && onboarded && !entitled}>
+        <Stack.Screen name="paywall" options={{ animation: 'fade', gestureEnabled: false }} />
       </Stack.Protected>
       <Stack.Protected guard={!(authenticated && onboarded)}>
         <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />

@@ -11,6 +11,7 @@ import {
   Image,
   Share,
   Platform,
+  Linking,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -33,6 +34,7 @@ import {
 import { formatVolume } from '@/lib/units';
 import { syncReminders, syncStreakDanger, cancelAllReminders } from '@/lib/notifications';
 import { signOut } from '@/lib/auth';
+import { billing } from '@/lib/billing';
 import { analytics } from '@/lib/analytics';
 import { tapSelection } from '@/lib/haptics';
 import { computeStreaks } from '@/lib/streak';
@@ -47,6 +49,7 @@ export default function ProfileScreen() {
   const exportData = useExportData();
   const identity = useAuthIdentity();
   const router = useRouter();
+  const [restoring, setRestoring] = useState(false);
 
   const unit = profile.data?.unit_preference ?? 'ml';
 
@@ -152,6 +155,34 @@ export default function ProfileScreen() {
       onError: () =>
         Alert.alert('Export failed', 'Could not prepare your data. Please try again.'),
     });
+  };
+
+  // Restore a prior subscription (App Review requires an in-app restore path).
+  const handleRestore = () => {
+    setRestoring(true);
+    billing
+      .restore()
+      .then((entitled) => {
+        Alert.alert(
+          entitled ? 'Purchases restored' : 'Nothing to restore',
+          entitled
+            ? 'Your subscription is active again.'
+            : "We couldn't find an active subscription for this account.",
+        );
+      })
+      .catch((e) =>
+        Alert.alert('Restore failed', e instanceof Error ? e.message : 'Please try again.'),
+      )
+      .finally(() => setRestoring(false));
+  };
+
+  // Deep-link to the OS subscription management screen.
+  const manageSubscription = () => {
+    const url =
+      Platform.OS === 'ios'
+        ? 'https://apps.apple.com/account/subscriptions'
+        : 'https://play.google.com/store/account/subscriptions';
+    Linking.openURL(url).catch(() => {});
   };
 
   const confirmSignOut = () => {
@@ -423,6 +454,29 @@ export default function ProfileScreen() {
                 </View>
                 <Divider />
                 <Row icon="log-out-outline" label="Sign out" onPress={confirmSignOut} />
+              </Card>
+            </Section>
+          </Animated.View>
+        )}
+
+        {/* Subscription — only meaningful with the real backend (mock has no billing) */}
+        {identity && (
+          <Animated.View entering={FadeInDown.springify().damping(18).delay(345)}>
+            <Section title="Subscription">
+              <Card>
+                <Row
+                  icon="card-outline"
+                  label="Manage subscription"
+                  onPress={manageSubscription}
+                  chevron
+                />
+                <Divider />
+                <Row
+                  icon="refresh-outline"
+                  label="Restore purchases"
+                  onPress={handleRestore}
+                  loading={restoring}
+                />
               </Card>
             </Section>
           </Animated.View>

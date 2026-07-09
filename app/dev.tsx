@@ -14,6 +14,8 @@ import {
   useAnalyzeImage,
 } from '@/lib/query/hooks';
 import { dataSource } from '@/lib/data';
+import { useBilling } from '@/lib/billing/context';
+import { setMockEntitled } from '@/lib/billing/MockBilling';
 import { formatProgress, formatVolume } from '@/lib/units';
 import type { AnalysisResult } from '@/lib/data/types';
 
@@ -44,6 +46,7 @@ export default function DevScreen() {
   const updateLog = useUpdateLog();
   const deleteLog = useDeleteLog();
   const analyze = useAnalyzeImage();
+  const billing = useBilling();
 
   const [lastAnalysis, setLastAnalysis] = useState<AnalysisResult | null>(null);
 
@@ -115,6 +118,24 @@ export default function DevScreen() {
                 : lastAnalysis.reasoning}
             </Text>
           )}
+        </View>
+
+        {/* Billing / paywall (mock mode) */}
+        <View className="gap-2 rounded-xl bg-slate-50 p-4">
+          <Text className="font-semibold text-slate-800">
+            Billing · entitlement: {billing.status}
+          </Text>
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              <Btn label="Lock (show paywall)" onPress={() => setMockEntitled(false)} />
+            </View>
+            <View className="flex-1">
+              <Btn label="Unlock (entitle)" onPress={() => setMockEntitled(true)} />
+            </View>
+          </View>
+          <Text className="text-xs text-slate-400">
+            Mock only. Locking swaps the app for the paywall route instantly.
+          </Text>
         </View>
 
         {/* Mutations */}

@@ -25,6 +25,11 @@ export interface AnalyticsEvents {
   data_exported: Record<string, never>;
   data_cleared: Record<string, never>;
   account_deleted: Record<string, never>;
+  paywall_viewed: Record<string, never>;
+  purchase_started: { plan: string };
+  purchase_completed: { plan: string };
+  purchase_restored: Record<string, never>;
+  purchase_failed: { plan: string; reason: string };
 }
 
 export type AnalyticsEvent = keyof AnalyticsEvents;
