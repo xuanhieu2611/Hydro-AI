@@ -48,11 +48,14 @@ export class RevenueCatBilling implements Billing {
 
   async logOut(): Promise<void> {
     if (!this.ready) return;
-    // Throws if already anonymous — harmless, and not worth surfacing.
+    // RevenueCat errors (and logs loudly) if you log out an already-anonymous
+    // user — which is the case on every cold start before the first sign-in.
+    // Guard on it so we only reset a genuinely identified customer.
     try {
+      if (await Purchases.isAnonymous()) return;
       await Purchases.logOut();
     } catch {
-      /* already anonymous */
+      /* already anonymous / not configured — nothing to reset */
     }
   }
 
