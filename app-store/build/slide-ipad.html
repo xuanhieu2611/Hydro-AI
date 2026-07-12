@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 2048px; height: 2732px; overflow: hidden;
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif; }
+  #stage { position: relative; width: 2048px; height: 2732px; overflow: hidden; }
+
+  .bg { position: absolute; inset: 0; background-size: cover; background-position: center; }
+  /* white glow so the headline reads over any photo */
+  .scrim { position: absolute; left: 0; right: 0; top: 0; height: 780px;
+    background: linear-gradient(180deg, rgba(255,255,255,.76) 0%, rgba(255,255,255,.34) 55%, rgba(255,255,255,0) 100%); }
+
+  .headline { position: absolute; top: 132px; left: 120px; right: 120px; text-align: center;
+    font-size: 148px; line-height: 1.02; font-weight: 800; letter-spacing: -3px; }
+  .headline .em { display: block; }
+  .sub { position: absolute; top: 520px; left: 120px; right: 120px; text-align: center;
+    font-size: 58px; line-height: 1.2; font-weight: 600; letter-spacing: -0.6px; white-space: nowrap; }
+
+  /* grounding shadow under the device */
+  .contact { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%);
+    width: 760px; height: 104px; border-radius: 50%;
+    background: radial-gradient(50% 50% at 50% 50%, rgba(8,36,63,.30), rgba(8,36,63,0) 70%);
+    filter: blur(8px); }
+
+  .device { position: absolute; left: 50%; top: 690px; transform: translateX(-50%);
+    width: 906px; height: 1920px; background: #0A0A0C; border-radius: 110px; padding: 21px;
+    box-shadow: 0 58px 108px rgba(8,36,63,.36), 0 20px 40px rgba(8,36,63,.22); }
+  .screen { position: relative; width: 864px; height: 1878px; border-radius: 90px;
+    overflow: hidden; background: #fff; }
+  .screen img { width: 100%; height: 100%; object-fit: cover; display: block; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div class="bg" id="bg"></div>
+    <div class="scrim"></div>
+    <div class="headline" id="headline"></div>
+    <div class="sub" id="sub"></div>
+    <div class="contact"></div>
+    <div class="device">
+      <div class="screen"><img id="shot" /></div>
+    </div>
+  </div>
+<script>
+  const NAVY = '#08243F', ACCENT = '#1E7BE8', SUBCOL = '#35597C';
+  const SLIDES = {
+    home:    { bg: 'ai-home-background',    shot: 'home',    h1: 'Your hydration,', h2: 'at a glance',  sub: 'See your whole day in one glance.' },
+    camera:  { bg: 'ai-camera-background',  shot: 'camera',  h1: 'Just snap',       h2: 'your drink',   sub: 'Point your camera — logged in a second.' },
+    result:  { bg: 'ai-result-background',  shot: 'result',  h1: 'AI logs it',      h2: 'for you',      sub: 'Volume, type & hydration, instantly.' },
+    history: { bg: 'ai-history-background', shot: 'history', h1: 'Watch your',      h2: 'streak grow',  sub: 'Hit your goal daily to build the habit.' },
+    profile: { bg: 'ai-profile-background', shot: 'profile', h1: 'Goals that',      h2: 'fit your life', sub: 'Set your target once and stay on track.' },
+  };
+  const key = new URLSearchParams(location.search).get('slide') || 'home';
+  const s = SLIDES[key];
+  document.getElementById('bg').style.backgroundImage = `url(bg/${s.bg}.png)`;
+  document.getElementById('shot').src = `shot/${s.shot}.png`;
+  document.getElementById('headline').innerHTML =
+    `<span style="color:${NAVY}">${s.h1}</span><span class="em" style="color:${ACCENT}">${s.h2}</span>`;
+  const sub = document.getElementById('sub'); sub.textContent = s.sub; sub.style.color = SUBCOL;
+</script>
+</body>
+</html>

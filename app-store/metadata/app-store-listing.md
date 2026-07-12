@@ -110,13 +110,13 @@ profanity, mature/suggestive themes, gambling, or unrestricted web access.)
 
 ## App Review Notes
 ```
-Sign-in: Hydro AI uses Sign in with Apple or Google only. No demo account is needed — the reviewer can sign in with a personal Apple ID to create a fresh account. Onboarding (name → goal → units → reminders) appears first; sign-in is the final onboarding step.
+Sign-in (required): Hydro AI uses Sign in with Apple or Google ONLY — there is no username/password, so no demo account is provided. The reviewer can sign in with a personal Apple ID to create a fresh account. Onboarding (name → goal → units → reminders) appears first; Sign in with Apple/Google is the final onboarding step.
 
-Core loop: From the Home tab, tap the camera button, take or pick a photo of any drink in a container, confirm the AI's estimate, and it logs toward the daily goal.
+Subscription / paywall: After sign-in the app is gated behind a premium subscription that includes a 7-day free trial. To reach the full app, tap "Start 7-day free trial" on the paywall (use a Sandbox Apple ID; no charge during the trial, cancel anytime in App Store settings). Terms of Use and Privacy Policy links are shown on the paywall screen.
 
-Account deletion (Guideline 5.1.1(v)): Profile tab → Data & account → Delete account. This permanently deletes the account and all associated data (profile, logs, thumbnails, connections) via a secure server-side function.
+Testing the core loop (works on Simulator too): From the Home tab, tap the camera button. On a physical device you can take a photo; if the camera is unavailable (e.g. Simulator), tap the photo-library icon at the bottom-right of the camera screen and pick any photo of a drink in a container. Confirm the AI's estimate and it logs toward the daily goal. Any drink in any container works for testing.
 
-Note: the app estimates drink volume from a photo of a beverage in a container; any drink works for testing.
+Account deletion (Guideline 5.1.1(v)): Profile tab → "Data & account" section → "Delete account". This permanently deletes the account and all associated data (profile, logs, thumbnails, connections) via a secure server-side function.
 ```
 
 ---
