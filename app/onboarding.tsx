@@ -20,7 +20,6 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
-import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
 
 import { VolumeAdjuster } from '@/components/VolumeAdjuster';
@@ -29,6 +28,7 @@ import { SignInButtons } from '@/components/SignInButtons';
 import { colors, gradients } from '@/lib/theme';
 import { useSession, useUpdateProfile } from '@/lib/query/hooks';
 import { saveDraft, type OnboardingDraft } from '@/lib/onboarding/draft';
+import { requestPermissions } from '@/lib/notifications';
 import { analytics } from '@/lib/analytics';
 import { tapSelection } from '@/lib/haptics';
 import {
@@ -432,9 +432,9 @@ function NotificationsStep({
   const toggle = async () => {
     tapSelection();
     if (!enabled) {
-      // Ask the OS now; actual scheduling lands in Phase 4.
-      const { status } = await Notifications.requestPermissionsAsync();
-      onChange(status === 'granted');
+      // Ask the OS now (allowSound included); schedule reconciles after finalize.
+      const granted = await requestPermissions();
+      onChange(granted);
     } else {
       onChange(false);
     }

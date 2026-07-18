@@ -1,13 +1,15 @@
-# CLAUDE.md
+# [CLAUDE.md](http://CLAUDE.md)
 
 Guidance for working in the Hydro AI repo. Read this before making changes.
 
 ## What this is
+
 Hydro AI is a mobile app that tracks water/fluid intake by photographing drinks — the AI estimates volume and logs it. See `PRD_HydroAI_Water_Tracker.md` for the product spec and `IMPLEMENTATION_PLAN.md` for the phased build plan. **These two docs are the source of truth; keep them in sync when scope changes.**
 
-Current status: planning → Phase 0 scaffolding. Most of the structure below is the intended target, not yet built.
+Current status: **live on the iOS App Store** (first release shipped 2026-07). The app is fully built — mock + Supabase data sources, hard paywall via RevenueCat, and the `analyze-image` Edge Function are all wired. Work is now post-launch: monitoring, bug fixes, and iterating on features. Treat the layout below as the actual structure, not a target.
 
 ## Stack (decided — do not swap without asking)
+
 - **App:** Expo (managed workflow) + expo-router (file-based routing), TypeScript.
 - **Backend:** Supabase — Postgres, Auth, Storage, Edge Functions (Deno). No separate API server.
 - **AI:** Claude Vision, called **only** from a Supabase Edge Function (`analyze-image`). Never call the AI API directly from the app.
@@ -18,7 +20,9 @@ Current status: planning → Phase 0 scaffolding. Most of the structure below is
 When you need library docs (Expo, Supabase, TanStack, Claude API), prefer the context7 MCP / Claude API skill over memory — these move fast.
 
 ## Build approach: UI-first with dummy data
+
 We build the **full UI and workflow against dummy/mock data first**, finalize the UX, then wire the real backend. To make that final swap trivial:
+
 - All screens/hooks depend on a **data-access interface** (`lib/data/repository.ts`), never on Supabase directly.
 - Ship a `MockRepository` (in-memory dummy data) and later a `SupabaseRepository` implementing the same interface.
 - Select the implementation via an env flag (e.g. `EXPO_PUBLIC_DATA_SOURCE=mock|supabase`).
@@ -26,6 +30,7 @@ We build the **full UI and workflow against dummy/mock data first**, finalize th
 - **Net rule:** if a UI component imports `@supabase/supabase-js`, that's a bug. Backend swap = change the provider, not the screens.
 
 ## Hard rules
+
 - **Never commit secrets.** Supabase keys and the Anthropic API key live in EAS secrets / Edge Function env vars, not in the repo. The app only ever holds the Supabase URL + anon key.
 - **Privacy: full-resolution images are never persisted server-side.** The Edge Function processes the image ephemerally. Only the app generates a small thumbnail and uploads it. Only result metadata (type, volume, timestamp, confidence) is stored.
 - **RLS on every table.** Users can only read/write their own rows. No table ships without a Row Level Security policy.
@@ -33,6 +38,7 @@ We build the **full UI and workflow against dummy/mock data first**, finalize th
 - **Camera needs a dev client**, not Expo Go. Don't assume Expo Go works for capture flows.
 
 ## Conventions
+
 - TypeScript everywhere; no `any` without a comment justifying it.
 - Routes live under `app/` (expo-router). Shared UI in `components/`, data hooks in `lib/` or `hooks/`.
 - Supabase access goes through a single client singleton + typed query hooks — no ad-hoc `fetch` to Supabase.
@@ -41,6 +47,7 @@ We build the **full UI and workflow against dummy/mock data first**, finalize th
 - Match the surrounding code's style; keep comments at the density of nearby code.
 
 ## Intended project layout (target)
+
 ```
 app/                 # expo-router routes (tabs: home, history, profile; camera modal)
 components/           # reusable UI (ProgressRing, ResultCard, LogFeed, ...)
@@ -52,12 +59,13 @@ supabase/
 ```
 
 ## Commands
-- Install: `npm install` *(an `.npmrc` sets `legacy-peer-deps=true` — a deep transitive react-dom peer range conflicts with the SDK-pinned react under strict npm; harmless. Use `npx expo install <pkg>` to add native modules at SDK-matched versions.)*
-- Run dev: `npx expo start` *(camera flows need a dev client, not Expo Go.)*
+
+- Install: `npm install` _(an_ `.npmrc` _sets_ `legacy-peer-deps=true` _— a deep transitive react-dom peer range conflicts with the SDK-pinned react under strict npm; harmless. Use_ `npx expo install <pkg>` _to add native modules at SDK-matched versions.)_
+- Run dev: `npx expo start` _(camera flows need a dev client, not Expo Go.)_
 - Typecheck: `npm run typecheck` (`tsc --noEmit`)
-- Verify the bundle compiles end-to-end: `npx expo export --platform ios --output-dir /tmp/x` *(catches babel/NativeWind/reanimated graph errors tsc can't).*
+- Verify the bundle compiles end-to-end: `npx expo export --platform ios --output-dir /tmp/x` _(catches babel/NativeWind/reanimated graph errors tsc can't)._
 - Project health: `npx expo-doctor`
-- Build (dev client): `eas build --profile development` *(`eas.json` ready; not yet run — needs an EAS account.)*
+- Build (dev client): `eas build --profile development` _(_`eas.json` _ready; not yet run — needs an EAS account.)_
 - Supabase local / functions: `supabase start`, `supabase functions serve analyze-image`
 - Lint/test: _not configured yet — add ESLint + a test runner when needed, then update this._
 
@@ -67,12 +75,15 @@ supabase/
 > Fake camera flag: `EXPO_PUBLIC_FAKE_CAMERA=1` swaps the `CameraView` for bundled sample photos (`assets/fake-camera/`) fed through the normal downscale→analyze→result-card path — the simulator has no camera (black preview, unusable `takePictureAsync`). Pair with `EXPO_PUBLIC_DATA_SOURCE=mock` for a fully clickable, zero-cost capture flow. Samples are ordered to match `MockAnalyzer`'s script. Off by default / on device. See `lib/dev/fakeCamera.ts`.
 
 ## Data model (see IMPLEMENTATION_PLAN.md §Phase 1 for full SQL)
+
 `profiles` (display_name, avatar_url, goal, units, onboarding_completed, reminder schedule: enabled/interval/window; `avatar_url` seeded from the Google auth photo — Apple returns none) · `log_entries` (volume, beverage_type, hydration_coefficient, thumbnail_url, ai_confidence_score) · `ai_usage` (per-user AI rate-limit counters; written only by the `consume_ai_quota()` RPC) · `daily-summary` as a SQL view.
 
 ## Cost guardrails (Edge Function `analyze-image`)
+
 The AI call is the cost/abuse surface, so it's rate-limited **server-side** (a client-only limit is bypassable). Each request charges the caller's quota via the atomic `consume_ai_quota()` RPC (per-minute burst + per-day cap, RLS-scoped to `auth.uid()`); over-limit returns **429 + Retry-After**, oversized uploads return **413**. Limits are env-tunable without a redeploy (`AI_RATE_LIMIT_PER_MINUTE`=10, `AI_RATE_LIMIT_PER_DAY`=100, `AI_MAX_IMAGE_BASE64_CHARS`=6 MB). The limiter **fails open** if unreachable. Client maps 429 → `RateLimitError` (`lib/data/errors.ts`) → a friendly Alert on the camera. DB migrations now live in `supabase/migrations/` (earlier ones were applied directly to the remote project).
 
 ## When in doubt
+
 - Scope/priority questions → check the PRD's user-story priorities (P0/P1/P2) and the phase plan; build P0 first.
 - Don't expand scope beyond the current phase without flagging it.
 - Update `IMPLEMENTATION_PLAN.md` checkboxes and this file's Commands section as things actually land.

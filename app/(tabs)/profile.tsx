@@ -32,7 +32,7 @@ import {
   useAuthIdentity,
 } from '@/lib/query/hooks';
 import { formatVolume } from '@/lib/units';
-import { syncReminders, syncStreakDanger, cancelAllReminders } from '@/lib/notifications';
+import { cancelAllReminders } from '@/lib/notifications';
 import { signOut } from '@/lib/auth';
 import { billing } from '@/lib/billing';
 import { analytics } from '@/lib/analytics';
@@ -83,26 +83,15 @@ export default function ProfileScreen() {
   };
 
   /**
-   * Persist a reminder-settings patch, then reconcile the OS schedule from the
-   * resulting profile. `syncReminders` is idempotent and handles the permission
-   * prompt + the disabled case (it just clears).
+   * Persist a reminder-settings patch. The root layout reconciles the OS
+   * schedule when `reminders_*` cache fields change — don't sync here or we
+   * race a concurrent cancel+reschedule and stack duplicate daily slots.
    */
   const patchReminders = (patch: Partial<Profile>) => {
     if (!profile.data) return;
     const next = { ...profile.data, ...patch };
-    // Day-state snapshot so the freshly-scheduled copy is streak/progress-aware
-    // (history is most-recent-first, so [0] is today).
-    const days = history.data ?? [];
-    const today = days[0];
-    const state = {
-      streak: computeStreaks(days).current,
-      remaining_ml: today ? Math.max(0, today.goal_ml - today.total_intake_ml) : undefined,
-      goal_ml: today?.goal_ml,
-    };
     updateProfile.mutate(patch, {
       onSuccess: () => {
-        syncReminders(next, state);
-        syncStreakDanger(next, state);
         if ('reminders_enabled' in patch || 'reminder_interval_hours' in patch) {
           analytics.track('reminders_configured', {
             enabled: next.reminders_enabled,

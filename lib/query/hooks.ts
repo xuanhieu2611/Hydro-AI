@@ -22,6 +22,7 @@ import { computeStreaks } from '../streak';
 import { todayKey } from '../date';
 import { MOCK_USER_ID } from '../data/mock/seed';
 import { clearDraft, loadDraft } from '../onboarding/draft';
+import { analytics } from '../analytics';
 import { queryKeys } from './client';
 
 /* ----------------------------------- auth ----------------------------------- */
@@ -147,8 +148,14 @@ export function useUpdateProfile() {
  * collected before sign-in, then written here after it. This lives at the root
  * (not in the onboarding screen) because the moment the session flips, the
  * profile-load splash unmounts onboarding — so an in-component flush would be
- * cut short. `enabled` should be `authenticated && profile loaded && !onboarded`.
- * Returns `finalizing` so the gate can hold the splash during the write.
+ * cut short.
+ *
+ * `enabled` should be `authenticated && profile loaded`. We flush whenever a
+ * draft exists — including when the account already has `onboarding_completed`
+ * (reinstall / returning Apple-Google ID). Skipping that case left
+ * `reminders_enabled` stuck at the old DB default after the user re-opted in.
+ * No draft → no-op (normal launches). Returns `finalizing` so the gate can
+ * hold the splash during the write.
  */
 export function useFinalizeOnboarding(enabled: boolean): boolean {
   const updateProfile = useUpdateProfile();
@@ -159,8 +166,8 @@ export function useFinalizeOnboarding(enabled: boolean): boolean {
     let cancelled = false;
     (async () => {
       const draft = await loadDraft();
-      // No draft → nothing to flush; the onboarding gate stays up so the user
-      // can complete it (e.g. an account that signed in but never finished).
+      // No draft → nothing to flush; if they aren't onboarded yet the gate stays
+      // up so they can complete the flow (e.g. signed in but never finished).
       if (!draft) return;
       setFinalizing(true);
       try {
@@ -175,6 +182,11 @@ export function useFinalizeOnboarding(enabled: boolean): boolean {
         if (draft.display_name) patch.display_name = draft.display_name;
         await updateProfile.mutateAsync(patch);
         await clearDraft();
+        analytics.track('onboarding_completed', {
+          goal_ml: draft.daily_goal_ml,
+          unit: draft.unit_preference,
+          reminders_enabled: draft.reminders_enabled,
+        });
       } finally {
         if (!cancelled) setFinalizing(false);
       }

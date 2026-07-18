@@ -105,10 +105,9 @@ function RootNavigator() {
 
   const authenticated = session === 'authenticated';
   const onboarded = !!profile.data?.onboarding_completed;
-  // After sign-in, flush the buffered onboarding answers into the profile.
-  const finalizing = useFinalizeOnboarding(
-    authenticated && !!profile.data && !onboarded,
-  );
+  // After sign-in, flush any buffered onboarding draft (including when the
+  // account was already onboarded — e.g. reinstall with the same Apple ID).
+  const finalizing = useFinalizeOnboarding(authenticated && !!profile.data);
 
   // Hard paywall: once onboarded, the app is reachable only with the premium
   // entitlement — otherwise the `paywall` route is the only thing shown. The

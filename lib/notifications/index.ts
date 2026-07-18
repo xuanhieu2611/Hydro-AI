@@ -19,7 +19,9 @@ import { composeNotification, type NotifKind, type NotifState } from './copy';
  * re-sync on app foreground / after each log to keep it reasonably fresh.
  *
  * We tag our notifications via `content.data.kind` so we can cancel just our own
- * without clobbering anything else.
+ * without clobbering anything else. Slots also use stable `identifier`s so a
+ * reschedule replaces rather than stacks — and a mutex serializes overlapping
+ * syncs from the root layout + foreground listener.
  */
 
 export type { NotifState } from './copy';
@@ -30,6 +32,27 @@ const INACTIVITY_HOURS = 5;
 /** When the evening streak-saver fires (local hour). Late enough to be a real
  *  "last chance," independent of the reminder window. */
 const STREAK_DANGER_HOUR = 21;
+
+/** Stable IDs so reschedule replaces instead of stacking duplicates. */
+const ID = {
+  reminder: (hour: number) => `hydro.reminder.${hour}`,
+  nudge: 'hydro.nudge',
+  streakDanger: 'hydro.streak-danger',
+} as const;
+
+/**
+ * Serialize overlapping sync calls. Without this, concurrent cancel+schedule
+ * (profile toggle + root effect, or double foreground) can leave two sets of
+ * daily slots. Callers chain onto `syncChain`; the latest args win per key.
+ */
+let syncChain: Promise<void> = Promise.resolve();
+
+function enqueueSync(fn: () => Promise<void>): Promise<void> {
+  const run = syncChain.then(fn, fn);
+  // Keep the chain alive even if `fn` rejects — next sync still runs.
+  syncChain = run.catch(() => {});
+  return run;
+}
 
 /**
  * Per-kind delivery config. On Android the sound is a property of the channel
@@ -147,7 +170,11 @@ function contentFor(kind: NotifKind, title: string, body: string) {
  * safe to call on every profile change / app foreground. Each slot gets fresh,
  * varied persona copy (no repeats within the day). No-op when disabled.
  */
-export async function syncReminders(profile: Profile, state: NotifState = {}): Promise<void> {
+export function syncReminders(profile: Profile, state: NotifState = {}): Promise<void> {
+  return enqueueSync(() => syncRemindersNow(profile, state));
+}
+
+async function syncRemindersNow(profile: Profile, state: NotifState): Promise<void> {
   await cancelKinds('reminder');
   if (!profile.reminders_enabled) return;
 
@@ -159,6 +186,7 @@ export async function syncReminders(profile: Profile, state: NotifState = {}): P
     reminderHours(profile).map((hour) => {
       const { title, body } = composeNotification('reminder', profile, state, { hour, exclude });
       return Notifications.scheduleNotificationAsync({
+        identifier: ID.reminder(hour),
         content: contentFor('reminder', title, body),
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -176,7 +204,11 @@ export async function syncReminders(profile: Profile, state: NotifState = {}): P
  * to push it back out, and on app open. A one-shot timer `INACTIVITY_HOURS` out.
  * No-op when reminders are off.
  */
-export async function bumpInactivityNudge(profile: Profile, state: NotifState = {}): Promise<void> {
+export function bumpInactivityNudge(profile: Profile, state: NotifState = {}): Promise<void> {
+  return enqueueSync(() => bumpInactivityNudgeNow(profile, state));
+}
+
+async function bumpInactivityNudgeNow(profile: Profile, state: NotifState): Promise<void> {
   await cancelKinds('nudge');
   if (!profile.reminders_enabled) return;
   const granted = await requestPermissions();
@@ -184,6 +216,7 @@ export async function bumpInactivityNudge(profile: Profile, state: NotifState = 
 
   const { title, body } = composeNotification('nudge', profile, state);
   await Notifications.scheduleNotificationAsync({
+    identifier: ID.nudge,
     content: contentFor('nudge', title, body),
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -201,7 +234,11 @@ export async function bumpInactivityNudge(profile: Profile, state: NotifState = 
  * after a log that crosses the goal silences it. Frozen-copy caveat applies:
  * the streak number reflects the last snapshot, refreshed on each re-sync.
  */
-export async function syncStreakDanger(profile: Profile, state: NotifState = {}): Promise<void> {
+export function syncStreakDanger(profile: Profile, state: NotifState = {}): Promise<void> {
+  return enqueueSync(() => syncStreakDangerNow(profile, state));
+}
+
+async function syncStreakDangerNow(profile: Profile, state: NotifState): Promise<void> {
   await cancelKinds('streak_danger');
   if (!profile.reminders_enabled) return;
   const hasStreak = (state.streak ?? 0) > 0;
@@ -215,6 +252,7 @@ export async function syncStreakDanger(profile: Profile, state: NotifState = {})
     hour: STREAK_DANGER_HOUR,
   });
   await Notifications.scheduleNotificationAsync({
+    identifier: ID.streakDanger,
     content: contentFor('streak_danger', title, body),
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -246,5 +284,5 @@ export async function celebrateGoalMet(
 
 /** Cancel everything we scheduled — used on data/account deletion. */
 export async function cancelAllReminders(): Promise<void> {
-  await cancelKinds('reminder', 'nudge', 'streak_danger');
+  return enqueueSync(() => cancelKinds('reminder', 'nudge', 'streak_danger'));
 }
