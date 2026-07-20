@@ -1,3 +1,4 @@
+import { getLocales } from 'expo-localization';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
@@ -64,21 +65,31 @@ function enqueueSync(fn: () => Promise<void>): Promise<void> {
  */
 const KIND_CONFIG: Record<
   NotifKind,
-  { channelId: string; channelName: string; importance: number; androidSound: string; iosSound: string }
+  {
+    channelId: string;
+    channelName: string;
+    importance: number;
+    androidSound: string;
+    iosSound: string;
+    /** Spoken sound — on iOS, `voiceSound()` overrides `iosSound` per device language. */
+    localizedVoice?: boolean;
+  }
 > = {
   reminder: {
     channelId: 'reminders',
     channelName: 'Hydration reminders',
     importance: Notifications.AndroidImportance.DEFAULT,
-    androidSound: 'uongnuocdinao',
-    iosSound: 'uongnuocdinao.wav',
+    androidSound: 'water_time',
+    iosSound: 'water_time.wav',
+    localizedVoice: true,
   },
   nudge: {
     channelId: 'nudges',
     channelName: 'Gentle nudges',
     importance: Notifications.AndroidImportance.DEFAULT,
-    androidSound: 'uongnuocdinao',
-    iosSound: 'uongnuocdinao.wav',
+    androidSound: 'water_time',
+    iosSound: 'water_time.wav',
+    localizedVoice: true,
   },
   streak_danger: {
     channelId: 'streak-danger',
@@ -95,6 +106,21 @@ const KIND_CONFIG: Record<
     iosSound: 'drop.wav',
   },
 };
+
+/**
+ * The reminder/nudge voice line is spoken, so it follows the device language:
+ * Vietnamese phones get the original "uống nước đi nào", everyone else gets the
+ * English "water time!". Read fresh each time rather than cached at import — the
+ * user can change language without relaunching, and `syncReminders` re-runs on
+ * foreground, so the schedule picks up the new sound on its own.
+ *
+ * iOS only: on Android the sound belongs to the channel, and channels are
+ * immutable once created, so a per-locale sound there needs per-locale channel
+ * IDs. Not worth it until we ship Android.
+ */
+function voiceSound(): string {
+  return getLocales()[0]?.languageCode === 'vi' ? 'uongnuocdinao.wav' : 'water_time.wav';
+}
 
 /**
  * Foreground handler — without this, notifications never present while the app
@@ -160,7 +186,8 @@ function contentFor(kind: NotifKind, title: string, body: string) {
     title,
     body,
     data: { kind } as { kind: NotifKind },
-    sound: cfg.iosSound, // iOS only; ignored on Android (channel carries sound)
+    // iOS only; ignored on Android (channel carries sound).
+    sound: cfg.localizedVoice ? voiceSound() : cfg.iosSound,
   };
 }
 

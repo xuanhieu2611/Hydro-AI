@@ -3,7 +3,7 @@
     "name": "Hydro AI",
     "slug": "hydro-ai",
     "scheme": "hydroai",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -57,6 +57,7 @@
           "sounds": [
             "./assets/sounds/drop.wav",
             "./assets/sounds/nag.wav",
+            "./assets/sounds/water_time.wav",
             "./assets/sounds/uongnuocdinao.wav"
           ]
         }
@@ -89,7 +90,8 @@
             "backgroundColor": "#0B1220"
           }
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true
